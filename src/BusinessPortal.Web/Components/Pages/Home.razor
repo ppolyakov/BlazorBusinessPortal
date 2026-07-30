@@ -1,0 +1,100 @@
+@page "/"
+@attribute [Authorize]
+@inject IDashboardService DashboardService
+
+<PageTitle>Dashboard · BusinessPortal</PageTitle>
+<PageHeader Eyebrow="Overview" Title="Good work starts with a clear view." Description="A live snapshot of delivery, time, and the decisions that need attention." />
+
+@if (error is not null)
+{
+    <div class="alert alert-danger" role="alert">@error</div>
+}
+else if (model is null)
+{
+    <LoadingState />
+}
+else
+{
+    <div class="metrics">
+        <div class="metric-card"><span>Active clients</span><strong>@model.ActiveClients</strong></div>
+        <div class="metric-card"><span>Active projects</span><strong>@model.ActiveProjects</strong></div>
+        <div class="metric-card"><span>Hours this month</span><strong>@model.MonthHours.ToString("0.##")</strong></div>
+        <div class="metric-card"><span>Awaiting approval</span><strong>@model.AwaitingApproval</strong></div>
+    </div>
+    <div class="dashboard-grid">
+        <section class="panel">
+            <h2>Hours by project</h2>
+            <p class="muted">Current month across the organization</p>
+            @if (model.HoursByProject.Count == 0)
+            {
+                <EmptyState Title="No hours recorded this month" Description="Project activity will appear here as time is entered." />
+            }
+            else
+            {
+                var max = model.HoursByProject.Max(x => x.Value);
+                <div class="bar-list">
+                    @foreach (var item in model.HoursByProject)
+                    {
+                        <div class="bar-row">
+                            <span>@item.Label</span>
+                            <div class="bar-track"><div class="bar-fill" style="width: @((item.Value / max * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture))%"></div></div>
+                            <strong>@item.Value.ToString("0.#")h</strong>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+        <section class="panel">
+            <h2>Recent activity</h2>
+            @if (model.RecentActivity.Count == 0)
+            {
+                <EmptyState Title="No recent activity" Description="Important changes will be recorded here." />
+            }
+            else
+            {
+                <ul class="activity-list">
+                    @foreach (var item in model.RecentActivity)
+                    {
+                        <li><strong>@item.Summary</strong><small>@item.UserName · @item.OccurredAtUtc.ToLocalTime().ToString("MMM d, HH:mm")</small></li>
+                    }
+                </ul>
+            }
+        </section>
+        <section class="panel">
+            <h2>Upcoming work</h2>
+            @if (model.UpcomingWork.Count == 0)
+            {
+                <EmptyState Title="No upcoming deadlines" Description="Open work with future due dates will appear here." />
+            }
+            else
+            {
+                <div class="table-shell">
+                    <QuickGrid Items="@model.UpcomingWork.AsQueryable()" Class="quick-grid">
+                        <PropertyColumn Property="x => x.Title" Title="Work item" />
+                        <PropertyColumn Property="x => x.ProjectName" Title="Project" />
+                        <TemplateColumn Title="Priority"><StatusPill Value="@context.Priority" /></TemplateColumn>
+                        <PropertyColumn Property="x => x.DueDate" Title="Due" Format="yyyy-MM-dd" />
+                    </QuickGrid>
+                </div>
+            }
+        </section>
+        <section class="panel">
+            <p class="eyebrow">Workflow focus</p>
+            <h2>Keep approvals moving</h2>
+            <p class="muted">Review submitted time while the context is fresh. Concurrent decisions are protected by optimistic locking.</p>
+            <AuthorizeView Roles="@PortalRoles.Management"><a href="approvals" class="btn btn-primary">Open approval queue</a></AuthorizeView>
+            <AuthorizeView Roles="@PortalRoles.Employee"><a href="my-time" class="btn btn-primary">Record my time</a></AuthorizeView>
+        </section>
+    </div>
+}
+
+@code {
+    private DashboardModel? model;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { model = await DashboardService.GetAsync(); }
+        catch (Exception ex) { error = ex is ForbiddenException ? ex.Message : "Dashboard data could not be loaded."; }
+    }
+}

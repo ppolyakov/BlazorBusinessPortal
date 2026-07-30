@@ -1,0 +1,62 @@
+@page "/approvals"
+@attribute [Authorize(Roles = PortalRoles.Management)]
+@inject ITimeEntryService TimeEntryService
+@inject IJSRuntime Js
+
+<PageTitle>Approvals · BusinessPortal</PageTitle>
+<PageHeader Eyebrow="Review queue" Title="Time approvals" Description="Review submitted work from other team members. Every decision is audited and concurrency-safe." />
+
+@if (message is not null) { <div class="alert alert-success" role="status">@message</div> }
+@if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+@if (rejecting is not null)
+{
+    <section class="form-card">
+        <h2>Reject @rejecting.UserName's entry</h2>
+        <p>@rejecting.WorkDate.ToString("yyyy-MM-dd") · @rejecting.ProjectName · @rejecting.Hours.ToString("0.##") hours</p>
+        <div class="field"><label for="reject-comment">Reviewer feedback</label><textarea id="reject-comment" class="form-control" @bind="rejectComment"></textarea></div>
+        <div class="head-actions"><button class="btn btn-danger-soft" disabled="@string.IsNullOrWhiteSpace(rejectComment)" @onclick="ConfirmReject">Reject entry</button><button class="btn btn-quiet" @onclick="() => rejecting = null">Cancel</button></div>
+    </section>
+}
+
+<section class="panel">
+    @if (result is null) { <LoadingState Text="Loading approval queue…" /> }
+    else if (result.Items.Count == 0) { <EmptyState Title="The queue is clear" Description="Submitted time from other team members will appear here." /> }
+    else
+    {
+        <div class="table-shell">
+            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
+                <TemplateColumn Title="Employee"><strong>@context.UserName</strong><div class="muted">@context.WorkDate.ToString("yyyy-MM-dd")</div></TemplateColumn>
+                <TemplateColumn Title="Work"><strong>@context.ProjectName</strong><div class="muted">@context.WorkItemTitle</div></TemplateColumn>
+                <PropertyColumn Property="x => x.Description" Title="Description" />
+                <PropertyColumn Property="x => x.Hours" Title="Hours" Format="0.##" />
+                <TemplateColumn Title="Decision"><div class="head-actions"><button class="btn btn-primary btn-sm" @onclick="() => Approve(context)">Approve</button><button class="btn btn-danger-soft btn-sm" @onclick="() => BeginReject(context)">Reject</button></div></TemplateColumn>
+            </QuickGrid>
+        </div>
+        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" Changed="ChangePage" />
+    }
+</section>
+
+@code {
+    private PageResult<TimeEntryListItem>? result;
+    private TimeEntryListItem? rejecting;
+    private string rejectComment = "";
+    private string? error;
+    private string? message;
+    private int page = 1;
+    protected override Task OnInitializedAsync() => Load();
+    private async Task Load() => result = await TimeEntryService.ApprovalsAsync(new(page, 20));
+    private async Task ChangePage(int value) { page = value; await Load(); }
+    private async Task Approve(TimeEntryListItem item)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Approve {item.Hours:0.##} hours for {item.UserName}?")) return;
+        await Run(() => TimeEntryService.ApproveAsync(item.Id, item.Version), "Time entry approved.");
+    }
+    private void BeginReject(TimeEntryListItem item) { rejecting = item; rejectComment = ""; }
+    private async Task ConfirmReject()
+    {
+        if (rejecting is null) return;
+        await Run(() => TimeEntryService.RejectAsync(rejecting.Id, rejecting.Version, rejectComment), "Time entry rejected with feedback.");
+        rejecting = null;
+    }
+    private async Task Run(Func<Task> operation, string success) { try { error = null; await operation(); message = success; await Load(); } catch (Exception ex) { error = ex.Message; } }
+}

@@ -1,0 +1,14 @@
+<div class="pager-row">
+    <span>@TotalCount item@(TotalCount == 1 ? "" : "s") · Page @Page of @TotalPages</span>
+    <div class="head-actions">
+        <button class="btn btn-quiet btn-sm" disabled="@(Page <= 1)" @onclick="() => Changed.InvokeAsync(Page - 1)">Previous</button>
+        <button class="btn btn-quiet btn-sm" disabled="@(Page >= TotalPages)" @onclick="() => Changed.InvokeAsync(Page + 1)">Next</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int Page { get; set; }
+    [Parameter] public int TotalPages { get; set; }
+    [Parameter] public int TotalCount { get; set; }
+    [Parameter] public EventCallback<int> Changed { get; set; }
+}

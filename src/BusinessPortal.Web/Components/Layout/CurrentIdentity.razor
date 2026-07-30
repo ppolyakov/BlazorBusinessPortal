@@ -1,0 +1,22 @@
+@inject ICurrentUser CurrentUser
+
+@if (user is not null)
+{
+    <div class="identity-line"><strong>@user.OrganizationName</strong><span>·</span><span>@user.DisplayName</span></div>
+}
+
+@code {
+    private CurrentUserInfo? user;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            user = await CurrentUser.GetAsync();
+        }
+        catch (ForbiddenException)
+        {
+            user = null;
+        }
+    }
+}

@@ -1,0 +1,35 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <NavMenu />
+    </aside>
+    <main class="main-shell">
+        <header class="topbar">
+            <div>
+                <div class="eyebrow">Business workspace</div>
+                <AuthorizeView>
+                    <Authorized><CurrentIdentity /></Authorized>
+                    <NotAuthorized><strong>Welcome to BusinessPortal</strong></NotAuthorized>
+                </AuthorizeView>
+            </div>
+            <AuthorizeView>
+                <Authorized>
+                    <form action="Account/Logout" method="post">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="ReturnUrl" value="" />
+                        <button type="submit" class="btn btn-quiet">Sign out</button>
+                    </form>
+                </Authorized>
+            </AuthorizeView>
+        </header>
+        <article class="content">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Something went wrong. <a href="." class="reload">Reload</a>
+    <span class="dismiss">×</span>
+</div>

@@ -1,0 +1,43 @@
+@page "/audit"
+@attribute [Authorize(Roles = PortalRoles.Administrator)]
+@inject IAuditService AuditService
+
+<PageTitle>Audit · BusinessPortal</PageTitle>
+<PageHeader Eyebrow="Administration" Title="Audit history" Description="A concise, tenant-scoped record of important changes and workflow decisions." />
+
+@if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+<section class="panel">
+    <div class="toolbar">
+        <div class="filter-bar"><input class="form-control" placeholder="Action, e.g. ProjectUpdated" @bind="action" /><input class="form-control" placeholder="Entity type" @bind="entityType" /><InputDate class="form-control" @bind-Value="from" aria-label="From date" /><InputDate class="form-control" @bind-Value="through" aria-label="Through date" /><button class="btn btn-quiet" @onclick="Apply">Apply</button></div>
+    </div>
+    @if (result is null) { <LoadingState Text="Loading audit history…" /> }
+    else if (result.Items.Count == 0) { <EmptyState Title="No audit events" Description="No events match the selected filters." /> }
+    else
+    {
+        <div class="table-shell">
+            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
+                <PropertyColumn Property="x => x.OccurredAtUtc" Title="UTC time" Format="yyyy-MM-dd HH:mm" />
+                <PropertyColumn Property="x => x.UserName" Title="Actor" />
+                <PropertyColumn Property="x => x.Action" Title="Action" />
+                <PropertyColumn Property="x => x.EntityType" Title="Entity" />
+                <PropertyColumn Property="x => x.EntityId" Title="Identifier" />
+                <PropertyColumn Property="x => x.Summary" Title="Safe summary" />
+            </QuickGrid>
+        </div>
+        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" Changed="ChangePage" />
+    }
+</section>
+
+@code {
+    private PageResult<AuditListItem>? result;
+    private string? action;
+    private string? entityType;
+    private DateOnly? from;
+    private DateOnly? through;
+    private string? error;
+    private int page = 1;
+    protected override Task OnInitializedAsync() => Load();
+    private async Task Load() { try { error = null; result = await AuditService.SearchAsync(new(page, 25), action, entityType, from, through); } catch (Exception ex) { error = ex.Message; } }
+    private async Task Apply() { page = 1; await Load(); }
+    private async Task ChangePage(int value) { page = value; await Load(); }
+}

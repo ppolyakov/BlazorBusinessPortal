@@ -361,3 +361,44 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# BusinessPortal local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+
+appsettings.Local.json
+appsettings.*.Local.json
+appsettings.Secrets.json
+appsettings.*.Secrets.json
+secrets.json
+*.secrets.json
+secrets/
+**/secrets/
+
+# Private keys, certificates, keystores, and signing material
+*.key
+*.pem
+*.p12
+*.pfx
+*.snk
+*.jks
+*.keystore
+*.kdbx
+
+# Local container overrides can contain credentials or host-specific settings
+compose.override.yaml
+compose.override.yml
+docker-compose.override.yaml
+docker-compose.override.yml
+
+# Local database and credential artifacts
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+credentials.json
+service-account*.json

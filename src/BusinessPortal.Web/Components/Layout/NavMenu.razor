@@ -1,0 +1,45 @@
+@implements IDisposable
+@inject NavigationManager NavigationManager
+
+<div class="brand">
+    <span class="brand-mark">BP</span>
+    <span><strong>BusinessPortal</strong><small>Operations, clearly.</small></span>
+</div>
+
+<input type="checkbox" id="nav-toggle" class="nav-toggle" />
+<label for="nav-toggle" class="nav-toggle-label">Menu</label>
+
+<nav class="portal-nav" aria-label="Primary navigation">
+    <AuthorizeView>
+        <Authorized>
+            <NavLink href="" Match="NavLinkMatch.All"><span>⌂</span> Dashboard</NavLink>
+            <NavLink href="clients"><span>◇</span> Clients</NavLink>
+            <NavLink href="projects"><span>▦</span> Projects</NavLink>
+            <NavLink href="work-items"><span>✓</span> Work items</NavLink>
+            <NavLink href="my-time"><span>◷</span> My time</NavLink>
+            <AuthorizeView Roles="@PortalRoles.Management" Context="managementAuth">
+                <NavLink href="approvals"><span>◎</span> Approvals</NavLink>
+                <NavLink href="reports"><span>↗</span> Reports</NavLink>
+            </AuthorizeView>
+            <AuthorizeView Roles="@PortalRoles.Administrator" Context="adminAuth">
+                <NavLink href="audit"><span>≡</span> Audit</NavLink>
+            </AuthorizeView>
+            <div class="nav-spacer"></div>
+            <NavLink href="Account/Manage"><span>⚙</span> Account</NavLink>
+        </Authorized>
+        <NotAuthorized>
+            <NavLink href="Account/Login"><span>→</span> Sign in</NavLink>
+        </NotAuthorized>
+    </AuthorizeView>
+</nav>
+
+<div class="sidebar-foot">
+    <span class="status-dot"></span>
+    Portfolio demo
+</div>
+
+@code {
+    protected override void OnInitialized() => NavigationManager.LocationChanged += OnLocationChanged;
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args) => StateHasChanged();
+    public void Dispose() => NavigationManager.LocationChanged -= OnLocationChanged;
+}

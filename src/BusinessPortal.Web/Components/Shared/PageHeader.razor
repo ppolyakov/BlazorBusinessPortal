@@ -1,0 +1,15 @@
+<div class="page-head">
+    <div>
+        @if (!string.IsNullOrWhiteSpace(Eyebrow)) { <p class="eyebrow">@Eyebrow</p> }
+        <h1>@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Description)) { <p>@Description</p> }
+    </div>
+    <div class="head-actions">@Actions</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Eyebrow { get; set; }
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

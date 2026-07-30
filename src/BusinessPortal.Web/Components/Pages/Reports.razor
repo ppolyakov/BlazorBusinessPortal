@@ -1,0 +1,107 @@
+@page "/reports"
+@attribute [Authorize(Roles = PortalRoles.Management)]
+@inject IReportService ReportService
+@inject IClientService ClientService
+@inject IProjectService ProjectService
+@inject IUserDirectory UserDirectory
+@inject IJSRuntime Js
+
+<PageTitle>Reports · BusinessPortal</PageTitle>
+<PageHeader Eyebrow="Analysis" Title="Time report" Description="Explore approved and in-flight hours with server-side aggregation, paging, and a safe Excel export.">
+    <Actions><button class="btn btn-primary" disabled="@exporting" @onclick="Export">@(exporting ? "Preparing…" : "Export Excel")</button></Actions>
+</PageHeader>
+
+@if (message is not null) { <div class="alert alert-success" role="status">@message</div> }
+@if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+
+<section class="panel">
+    <div class="filter-bar">
+        <div class="field"><label for="report-from">From</label><InputDate id="report-from" class="form-control" @bind-Value="filter.From" /></div>
+        <div class="field"><label for="report-to">Through</label><InputDate id="report-to" class="form-control" @bind-Value="filter.To" /></div>
+        <div class="field"><label for="report-client">Client</label><InputSelect id="report-client" class="form-select" @bind-Value="filter.ClientId"><option value="">All clients</option>@foreach (var item in clients) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
+        <div class="field"><label for="report-project">Project</label><InputSelect id="report-project" class="form-select" @bind-Value="filter.ProjectId"><option value="">All projects</option>@foreach (var item in projects) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
+        <div class="field"><label for="report-user">Employee</label><InputSelect id="report-user" class="form-select" @bind-Value="filter.UserId"><option value="">All employees</option>@foreach (var item in users) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
+        <button class="btn btn-quiet" @onclick="Apply">Apply filters</button>
+    </div>
+</section>
+
+@if (result is null) { <LoadingState Text="Running report query…" /> }
+else
+{
+    <div class="metrics">
+        <div class="metric-card"><span>Total hours</span><strong>@result.TotalHours.ToString("0.##")</strong></div>
+        <div class="metric-card"><span>Detail rows</span><strong>@result.Details.TotalCount</strong></div>
+        <div class="metric-card"><span>Projects represented</span><strong>@result.Totals.Count</strong></div>
+        <div class="metric-card"><span>Period</span><strong style="font-size:1.05rem">@filter.From.ToString("MMM d") – @filter.To.ToString("MMM d")</strong></div>
+    </div>
+    <div class="dashboard-grid">
+        <section class="panel">
+            <h2>Hours by project</h2>
+            @if (result.Totals.Count == 0) { <EmptyState Title="No report data" Description="Adjust the filters to include recorded time." /> }
+            else
+            {
+                var max = result.Totals.Max(x => x.Value);
+                <div class="bar-list">@foreach (var item in result.Totals) { <div class="bar-row"><span>@item.Label</span><div class="bar-track"><div class="bar-fill" style="width:@Percent(item.Value, max)%"></div></div><strong>@item.Value.ToString("0.#")h</strong></div> }</div>
+            }
+        </section>
+        <section class="panel">
+            <p class="eyebrow">Export safeguards</p>
+            <h2>Excel-ready, by design</h2>
+            <p class="muted">The export reflects current filters, limits output to 10,000 rows, freezes headings, sanitizes XML, and neutralizes formula-like user text.</p>
+        </section>
+    </div>
+    <section class="panel" style="margin-top:1rem">
+        <h2>Detailed entries</h2>
+        @if (result.Details.Items.Count == 0) { <EmptyState Title="No detail rows" Description="There are no entries in the selected report scope." /> }
+        else
+        {
+            <div class="table-shell">
+                <QuickGrid Items="@result.Details.Items.AsQueryable()" Class="quick-grid">
+                    <PropertyColumn Property="x => x.WorkDate" Title="Date" Format="yyyy-MM-dd" />
+                    <PropertyColumn Property="x => x.ClientName" Title="Client" />
+                    <PropertyColumn Property="x => x.ProjectName" Title="Project" />
+                    <PropertyColumn Property="x => x.UserName" Title="Employee" />
+                    <PropertyColumn Property="x => x.Hours" Title="Hours" Format="0.##" />
+                    <PropertyColumn Property="x => x.Description" Title="Description" />
+                    <TemplateColumn Title="Status"><StatusPill Value="@context.Status" /></TemplateColumn>
+                </QuickGrid>
+            </div>
+            <Pager Page="@result.Details.Page" TotalPages="@result.Details.TotalPages" TotalCount="@result.Details.TotalCount" Changed="ChangePage" />
+        }
+    </section>
+}
+
+@code {
+    private ReportFilter filter = new(DateOnly.FromDateTime(DateTime.Today).AddMonths(-2), DateOnly.FromDateTime(DateTime.Today));
+    private ReportModel? result;
+    private IReadOnlyList<ClientListItem> clients = [];
+    private IReadOnlyList<LookupItem<Guid>> projects = [];
+    private IReadOnlyList<LookupItem<string>> users = [];
+    private string? error;
+    private string? message;
+    private bool exporting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        clients = (await ClientService.SearchAsync(new(1, 100))).Items;
+        projects = await ProjectService.LookupsAsync();
+        users = await UserDirectory.ListAsync();
+        await Load();
+    }
+    private async Task Load() { try { error = null; result = await ReportService.GetAsync(filter); } catch (Exception ex) { error = ex.Message; } }
+    private async Task Apply() { filter.Page = 1; await Load(); }
+    private async Task ChangePage(int value) { filter.Page = value; await Load(); }
+    private static string Percent(decimal value, decimal max) => (max <= 0 ? 0 : value / max * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+    private async Task Export()
+    {
+        exporting = true;
+        try
+        {
+            var file = await ReportService.ExportAsync(filter);
+            await Js.InvokeVoidAsync("businessPortal.download", file.FileName, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", file.Content);
+            message = "Excel report generated.";
+        }
+        catch (Exception ex) { error = ex.Message; }
+        finally { exporting = false; }
+    }
+}

@@ -1,0 +1,90 @@
+@page "/work-items"
+@attribute [Authorize]
+@inject IWorkItemService WorkItemService
+@inject IProjectService ProjectService
+@inject IUserDirectory UserDirectory
+
+<PageTitle>Work items · BusinessPortal</PageTitle>
+<PageHeader Eyebrow="Execution" Title="Work items" Description="Prioritized tasks with ownership, due dates, and fast status visibility.">
+    <Actions><AuthorizeView Roles="@PortalRoles.Management"><button class="btn btn-primary" @onclick="Create">New work item</button></AuthorizeView></Actions>
+</PageHeader>
+
+@if (message is not null) { <div class="alert alert-success" role="status">@message</div> }
+@if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+
+@if (editing)
+{
+    <section class="form-card">
+        <h2>@(editId.HasValue ? "Edit work item" : "Create work item")</h2>
+        <EditForm Model="input" OnValidSubmit="Save" FormName="work-item-form">
+            <DataAnnotationsValidator /><ValidationSummary />
+            <div class="field-grid">
+                <div class="field"><label for="work-project">Project</label><InputSelect id="work-project" class="form-select" @bind-Value="input.ProjectId"><option value="@Guid.Empty">Choose a project</option>@foreach (var item in projects) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
+                <div class="field"><label for="work-assignee">Assignee</label><InputSelect id="work-assignee" class="form-select" @bind-Value="input.AssignedToUserId"><option value="">Unassigned</option>@foreach (var item in users) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
+                <div class="field wide"><label for="work-title">Title</label><InputText id="work-title" class="form-control" @bind-Value="input.Title" /><ValidationMessage For="() => input.Title" /></div>
+                <div class="field"><label for="work-status">Status</label><InputSelect id="work-status" class="form-select" @bind-Value="input.Status">@foreach (var value in Enum.GetValues<WorkItemStatus>()) { <option value="@value">@value</option> }</InputSelect></div>
+                <div class="field"><label for="work-priority">Priority</label><InputSelect id="work-priority" class="form-select" @bind-Value="input.Priority">@foreach (var value in Enum.GetValues<WorkItemPriority>()) { <option value="@value">@value</option> }</InputSelect></div>
+                <div class="field"><label for="work-due">Due date</label><InputDate id="work-due" class="form-control" @bind-Value="input.DueDate" /></div>
+                <div class="field"><label for="work-estimate">Estimated hours</label><InputNumber id="work-estimate" class="form-control" @bind-Value="input.EstimatedHours" /></div>
+                <div class="field wide"><label for="work-description">Description</label><InputTextArea id="work-description" class="form-control" @bind-Value="input.Description" /></div>
+            </div>
+            <div class="head-actions"><button class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save work item")</button><button type="button" class="btn btn-quiet" @onclick="Cancel">Cancel</button></div>
+        </EditForm>
+    </section>
+}
+
+<section class="panel">
+    <div class="toolbar">
+        <div class="filter-bar"><input class="form-control" placeholder="Search tasks" @bind="search" /><select class="form-select" @bind="statusFilter"><option value="">All statuses</option>@foreach (var value in Enum.GetValues<WorkItemStatus>()) { <option value="@value">@value</option> }</select><button class="btn btn-quiet" @onclick="ApplyFilters">Apply</button></div>
+        <span class="muted">Overdue tasks are highlighted</span>
+    </div>
+    @if (result is null) { <LoadingState /> }
+    else if (result.Items.Count == 0) { <EmptyState Title="No matching work items" Description="Adjust filters or create a task." /> }
+    else
+    {
+        <div class="table-shell">
+            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
+                <TemplateColumn Title="Work item"><strong>@context.Title</strong><div class="muted">@context.ProjectName</div></TemplateColumn>
+                <TemplateColumn Title="Status"><StatusPill Value="@context.Status" /></TemplateColumn>
+                <TemplateColumn Title="Priority"><StatusPill Value="@context.Priority" /></TemplateColumn>
+                <PropertyColumn Property="x => x.AssignedToName" Title="Assignee" />
+                <TemplateColumn Title="Due"><span class="@DueClass(context)">@context.DueDate?.ToString("yyyy-MM-dd")</span></TemplateColumn>
+                <PropertyColumn Property="x => x.EstimatedHours" Title="Estimate" Format="0.#" />
+                <TemplateColumn Title="" Context="workItem"><AuthorizeView Roles="@PortalRoles.Management" Context="authState"><button class="btn btn-quiet btn-sm" @onclick="() => Edit(workItem.Id)">Edit</button></AuthorizeView></TemplateColumn>
+            </QuickGrid>
+        </div>
+        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" Changed="ChangePage" />
+    }
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "project")] private Guid? ProjectFilter { get; set; }
+    private PageResult<WorkItemListItem>? result;
+    private IReadOnlyList<LookupItem<Guid>> projects = [];
+    private IReadOnlyList<LookupItem<string>> users = [];
+    private WorkItemInput input = new();
+    private Guid? editId;
+    private string? search;
+    private string statusFilter = "";
+    private string? error;
+    private string? message;
+    private bool editing;
+    private bool saving;
+    private int page = 1;
+
+    protected override async Task OnInitializedAsync() { projects = await ProjectService.LookupsAsync(); users = await UserDirectory.ListAsync(); await Load(); }
+    private async Task Load() => result = await WorkItemService.SearchAsync(new(page, 20, search), ProjectFilter, Enum.TryParse<WorkItemStatus>(statusFilter, out var status) ? status : null);
+    private async Task ApplyFilters() { page = 1; await Load(); }
+    private void Create() { input = new WorkItemInput { ProjectId = ProjectFilter ?? Guid.Empty }; editId = null; editing = true; message = error = null; }
+    private async Task Edit(Guid id) { input = await WorkItemService.GetAsync(id); editId = id; editing = true; }
+    private void Cancel() => editing = false;
+    private async Task ChangePage(int value) { page = value; await Load(); }
+    private static string DueClass(WorkItemListItem item) => item.DueDate < DateOnly.FromDateTime(DateTime.Today) && item.Status != WorkItemStatus.Done ? "status-pill overdue" : "";
+    private async Task Save()
+    {
+        saving = true; error = null;
+        try { await WorkItemService.SaveAsync(editId, input); editing = false; message = "Work item saved."; await Load(); }
+        catch (Exception ex) { error = ex.Message; }
+        finally { saving = false; }
+    }
+}

@@ -1,0 +1,94 @@
+@page "/projects"
+@attribute [Authorize]
+@inject IProjectService ProjectService
+@inject IClientService ClientService
+
+<PageTitle>Projects · BusinessPortal</PageTitle>
+<PageHeader Eyebrow="Delivery" Title="Projects" Description="Plan work, watch budget utilization, and keep delivery status visible.">
+    <Actions><AuthorizeView Roles="@PortalRoles.Management"><button class="btn btn-primary" @onclick="Create">New project</button></AuthorizeView></Actions>
+</PageHeader>
+
+@if (message is not null) { <div class="alert alert-success" role="status">@message</div> }
+@if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+
+@if (editing)
+{
+    <section class="form-card">
+        <h2>@(editId.HasValue ? "Edit project" : "Create project")</h2>
+        <EditForm Model="input" OnValidSubmit="Save" FormName="project-form">
+            <DataAnnotationsValidator /><ValidationSummary />
+            <div class="field-grid">
+                <div class="field"><label for="project-client">Client</label><InputSelect id="project-client" class="form-select" @bind-Value="input.ClientId"><option value="@Guid.Empty">Choose a client</option>@foreach (var item in clients) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
+                <div class="field"><label for="project-code">Project code</label><InputText id="project-code" class="form-control" @bind-Value="input.Code" /><ValidationMessage For="() => input.Code" /></div>
+                <div class="field wide"><label for="project-name">Name</label><InputText id="project-name" class="form-control" @bind-Value="input.Name" /><ValidationMessage For="() => input.Name" /></div>
+                <div class="field"><label for="project-status">Status</label><InputSelect id="project-status" class="form-select" @bind-Value="input.Status">@foreach (var value in Enum.GetValues<ProjectStatus>()) { <option value="@value">@value</option> }</InputSelect></div>
+                <div class="field"><label for="project-budget">Budget hours</label><InputNumber id="project-budget" class="form-control" @bind-Value="input.BudgetHours" /></div>
+                <div class="field"><label for="project-start">Start date</label><InputDate id="project-start" class="form-control" @bind-Value="input.StartDate" /></div>
+                <div class="field"><label for="project-end">End date</label><InputDate id="project-end" class="form-control" @bind-Value="input.EndDate" /><ValidationMessage For="() => input.EndDate" /></div>
+                <div class="field wide"><label for="project-description">Description</label><InputTextArea id="project-description" class="form-control" @bind-Value="input.Description" /></div>
+            </div>
+            <div class="head-actions"><button class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save project")</button><button type="button" class="btn btn-quiet" @onclick="Cancel">Cancel</button></div>
+        </EditForm>
+    </section>
+}
+
+<section class="panel">
+    <div class="toolbar">
+        <div class="filter-bar">
+            <input class="form-control" placeholder="Search name or code" @bind="search" aria-label="Search projects" />
+            <select class="form-select" @bind="statusFilter" aria-label="Filter by status"><option value="">All statuses</option>@foreach (var value in Enum.GetValues<ProjectStatus>()) { <option value="@value">@value</option> }</select>
+            <button class="btn btn-quiet" @onclick="ApplyFilters">Apply</button>
+        </div>
+        <span class="muted">Budget uses approved time</span>
+    </div>
+    @if (result is null) { <LoadingState /> }
+    else if (result.Items.Count == 0) { <EmptyState Title="No matching projects" Description="Adjust the filters or create a project." /> }
+    else
+    {
+        <div class="table-shell">
+            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
+                <PropertyColumn Property="x => x.Code" Title="Code" />
+                <PropertyColumn Property="x => x.Name" Title="Project" />
+                <PropertyColumn Property="x => x.ClientName" Title="Client" />
+                <TemplateColumn Title="Status"><StatusPill Value="@context.Status" /></TemplateColumn>
+                <TemplateColumn Title="Budget">
+                    <div><strong>@context.UsedHours.ToString("0.#")</strong> / @context.BudgetHours.ToString("0.#")h</div>
+                    <div class="bar-track"><div class="bar-fill" style="width:@BudgetPercent(context)%"></div></div>
+                </TemplateColumn>
+                <PropertyColumn Property="x => x.EndDate" Title="Ends" Format="yyyy-MM-dd" />
+                <TemplateColumn Title="" Context="project"><div class="head-actions"><a class="btn btn-quiet btn-sm" href="@($"work-items?project={project.Id}")">Tasks</a><AuthorizeView Roles="@PortalRoles.Management" Context="authState"><button class="btn btn-quiet btn-sm" @onclick="() => Edit(project.Id)">Edit</button></AuthorizeView></div></TemplateColumn>
+            </QuickGrid>
+        </div>
+        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" Changed="ChangePage" />
+    }
+</section>
+
+@code {
+    private PageResult<ProjectListItem>? result;
+    private IReadOnlyList<ClientListItem> clients = [];
+    private ProjectInput input = new();
+    private Guid? editId;
+    private string? search;
+    private string statusFilter = "";
+    private string? error;
+    private string? message;
+    private bool editing;
+    private bool saving;
+    private int page = 1;
+
+    protected override async Task OnInitializedAsync() { clients = (await ClientService.SearchAsync(new(1, 100))).Items; await Load(); }
+    private async Task Load() => result = await ProjectService.SearchAsync(new(page, 20, search), status: Enum.TryParse<ProjectStatus>(statusFilter, out var status) ? status : null);
+    private async Task ApplyFilters() { page = 1; await Load(); }
+    private void Create() { input = new(); editId = null; editing = true; message = error = null; }
+    private async Task Edit(Guid id) { input = await ProjectService.GetAsync(id); editId = id; editing = true; }
+    private void Cancel() => editing = false;
+    private async Task ChangePage(int value) { page = value; await Load(); }
+    private static string BudgetPercent(ProjectListItem item) => Math.Min(100, item.BudgetHours <= 0 ? 0 : item.UsedHours / item.BudgetHours * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+    private async Task Save()
+    {
+        saving = true; error = null;
+        try { await ProjectService.SaveAsync(editId, input); editing = false; message = "Project saved."; await Load(); }
+        catch (Exception ex) { error = ex.Message; }
+        finally { saving = false; }
+    }
+}

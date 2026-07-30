@@ -1,0 +1,96 @@
+@page "/Account/Login"
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using BusinessPortal.Infrastructure
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<Login> Logger
+@inject IConfiguration Configuration
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Sign in · BusinessPortal</PageTitle>
+
+<div class="login-shell">
+    <section class="login-story">
+        <span class="brand-mark large">BP</span>
+        <p class="eyebrow">Business management, without the noise</p>
+        <h1>Make the next decision with confidence.</h1>
+        <p>Clients, delivery, time approvals, reporting, and audit history in one focused workspace.</p>
+        <div class="login-proof"><span>✓</span> Organization-isolated data</div>
+        <div class="login-proof"><span>✓</span> Role-aware workflows</div>
+        <div class="login-proof"><span>✓</span> PostgreSQL-backed reporting</div>
+    </section>
+    <section class="login-card">
+        <div>
+            <p class="eyebrow">Welcome back</p>
+            <h2>Sign in to your workspace</h2>
+            <p class="muted">Use your organization account. Invalid attempts return a generic response.</p>
+        </div>
+        @if (errorMessage is not null)
+        {
+            <div class="alert alert-danger" role="alert">@errorMessage</div>
+        }
+        <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="validation-message" />
+            <div class="field">
+                <label for="login-email">Email address</label>
+                <InputText @bind-Value="Input.Email" id="login-email" class="form-control" autocomplete="username" />
+                <ValidationMessage For="() => Input.Email" />
+            </div>
+            <div class="field">
+                <label for="login-password">Password</label>
+                <InputText type="password" @bind-Value="Input.Password" id="login-password" class="form-control" autocomplete="current-password" />
+                <ValidationMessage For="() => Input.Password" />
+            </div>
+            <label class="check-line"><InputCheckbox @bind-Value="Input.RememberMe" /> Keep me signed in</label>
+            <button type="submit" class="btn btn-primary btn-lg w-100">Sign in</button>
+        </EditForm>
+        @if (Configuration.GetValue<bool>("SeedDemoData"))
+        {
+            <div class="demo-accounts">
+                <strong>Demo accounts</strong>
+                <span>admin@northstar.demo</span>
+                <span>manager@northstar.demo</span>
+                <span>employee@northstar.demo</span>
+                <small>Password is provided through your local environment.</small>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private string? errorMessage;
+    private EditContext editContext = default!;
+
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] private InputModel Input { get; set; } = default!;
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        editContext = new(Input);
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+    }
+
+    private async Task LoginUser()
+    {
+        if (!editContext.Validate()) return;
+        var result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: true);
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("A user signed in.");
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        errorMessage = "The email or password is incorrect.";
+    }
+
+    private sealed class InputModel
+    {
+        [Required, EmailAddress] public string Email { get; set; } = "";
+        [Required, DataType(DataType.Password)] public string Password { get; set; } = "";
+        public bool RememberMe { get; set; }
+    }
+}
