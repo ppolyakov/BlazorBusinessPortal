@@ -1,0 +1,47 @@
+<form action="@($"/notifications/{Item.Id}/open")" method="post" class="notification-item-form">
+    <AntiforgeryToken />
+    <button type="submit" class="notification-item @(Item.IsRead ? "is-read" : "is-unread")">
+        @if (Item.ActorName is not null)
+        {
+            <UserAvatar Name="@Item.ActorName" ImageUrl="@Item.ActorAvatarUrl" Size="sm" />
+        }
+        else
+        {
+            <span class="notification-type-icon @TypeClass"><PortalIcon Name="@IconName" /></span>
+        }
+        <span class="notification-copy">
+            <span class="notification-title-row"><strong>@Item.Title</strong>@if (!Item.IsRead) { <span class="notification-unread-dot" aria-label="Unread"></span> }</span>
+            <span class="notification-message">@Item.Message</span>
+            <time datetime="@Item.CreatedAtUtc.ToString("O")">@Age</time>
+        </span>
+    </button>
+</form>
+
+@code {
+    [Parameter, EditorRequired] public NotificationListItem Item { get; set; } = default!;
+
+    private string IconName => Item.Type switch
+    {
+        NotificationType.TimeEntrySubmitted => "inbox",
+        NotificationType.TimeEntryApproved => "check-circle",
+        NotificationType.TimeEntryRejected => "alert-circle",
+        NotificationType.ProjectCompleted => "briefcase",
+        NotificationType.WorkItemAssigned => "work",
+        _ => "bell"
+    };
+
+    private string TypeClass => $"notification-type-{Item.Type}";
+
+    private string Age
+    {
+        get
+        {
+            var elapsed = DateTime.UtcNow - Item.CreatedAtUtc;
+            if (elapsed < TimeSpan.FromMinutes(1)) return "Just now";
+            if (elapsed < TimeSpan.FromHours(1)) return $"{Math.Max(1, (int)elapsed.TotalMinutes)}m ago";
+            if (elapsed < TimeSpan.FromDays(1)) return $"{Math.Max(1, (int)elapsed.TotalHours)}h ago";
+            if (elapsed < TimeSpan.FromDays(7)) return $"{Math.Max(1, (int)elapsed.TotalDays)}d ago";
+            return Item.CreatedAtUtc.ToLocalTime().ToString("MMM d");
+        }
+    }
+}

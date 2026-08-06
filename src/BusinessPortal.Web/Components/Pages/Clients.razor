@@ -1,32 +1,42 @@
 @page "/clients"
 @attribute [Authorize]
 @inject IClientService ClientService
+@inject ToastService Toasts
 
-<PageTitle>Clients · BusinessPortal</PageTitle>
+<PageTitle>Clients · Vela</PageTitle>
 <PageHeader Eyebrow="Relationships" Title="Clients" Description="A server-filtered view of every client in your organization.">
     <Actions><AuthorizeView Roles="@PortalRoles.Management"><button class="btn btn-primary" @onclick="Create">New client</button></AuthorizeView></Actions>
 </PageHeader>
 
-@if (message is not null) { <div class="alert alert-success" role="status">@message</div> }
-@if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+@if (!editing && error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
 
-@if (editing)
-{
-    <section class="form-card">
-        <h2>@(editId.HasValue ? "Edit client" : "Create client")</h2>
-        <EditForm Model="input" OnValidSubmit="Save" FormName="client-form">
-            <DataAnnotationsValidator /><ValidationSummary />
-            <div class="field-grid">
-                <div class="field"><label for="client-name">Client name</label><InputText id="client-name" class="form-control" @bind-Value="input.Name" /><ValidationMessage For="() => input.Name" /></div>
-                <div class="field"><label for="client-status">Status</label><InputSelect id="client-status" class="form-select" @bind-Value="input.Status"><option value="@ClientStatus.Active">Active</option><option value="@ClientStatus.Inactive">Inactive</option></InputSelect></div>
-                <div class="field"><label for="contact-name">Contact name</label><InputText id="contact-name" class="form-control" @bind-Value="input.ContactName" /></div>
-                <div class="field"><label for="contact-email">Contact email</label><InputText id="contact-email" class="form-control" @bind-Value="input.ContactEmail" /><ValidationMessage For="() => input.ContactEmail" /></div>
-                <div class="field wide"><label for="client-notes">Notes</label><InputTextArea id="client-notes" class="form-control" @bind-Value="input.Notes" /></div>
-            </div>
-            <div class="head-actions"><button class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save client")</button><button type="button" class="btn btn-quiet" @onclick="Cancel">Cancel</button></div>
-        </EditForm>
-    </section>
-}
+<PortalModal Visible="editing" Title="@(editId.HasValue ? "Edit client" : "Create client")" Closed="Cancel">
+    @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+    <EditForm Model="input" OnValidSubmit="Save" FormName="client-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="field-grid">
+            <div class="field"><label for="client-name">Client name</label><InputText id="client-name" class="form-control" @bind-Value="input.Name" /><ValidationMessage For="() => input.Name" /></div>
+            <div class="field"><label for="client-status">Status</label><PortalSelect TValue="ClientStatus" Id="client-status" MenuLabel="Client status" Options="ClientStatusOptions" @bind-Value="input.Status" /></div>
+            <div class="field"><label for="contact-name">Contact name</label><InputText id="contact-name" class="form-control" @bind-Value="input.ContactName" /></div>
+            <div class="field"><label for="contact-email">Contact email</label><InputText id="contact-email" class="form-control" @bind-Value="input.ContactEmail" /><ValidationMessage For="() => input.ContactEmail" /></div>
+            <div class="field wide"><label for="client-notes">Notes</label><InputTextArea id="client-notes" class="form-control" @bind-Value="input.Notes" /></div>
+        </div>
+        <div class="head-actions">
+            <button class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save client")</button>
+            <button type="button" class="btn btn-quiet" @onclick="Cancel">Cancel</button>
+        </div>
+    </EditForm>
+</PortalModal>
+
+<ConfirmationModal Visible="@(pendingDelete is not null)"
+                   Title="Delete client"
+                   Message="@(pendingDelete is null ? "" : $"Delete client '{pendingDelete.Name}' permanently? This action cannot be undone.")"
+                   ConfirmText="Delete client"
+                   Destructive="true"
+                   Busy="deleting"
+                   Confirmed="ConfirmDelete"
+                   Cancelled="CancelDelete" />
 
 <section class="panel">
     <div class="toolbar">
@@ -42,12 +52,22 @@
                 <PropertyColumn Property="x => x.Name" Title="Client" />
                 <PropertyColumn Property="x => x.ContactName" Title="Contact" />
                 <PropertyColumn Property="x => x.ContactEmail" Title="Email" />
-                <TemplateColumn Title="Status"><StatusPill Value="@context.Status" /></TemplateColumn>
-                <PropertyColumn Property="x => x.ProjectCount" Title="Projects" />
-                <TemplateColumn Title="" Context="client"><AuthorizeView Roles="@PortalRoles.Management" Context="authState"><button class="btn btn-quiet btn-sm" @onclick="() => Edit(client.Id)">Edit</button></AuthorizeView></TemplateColumn>
+                <TemplateColumn Title="Status" Class="cell-status"><StatusPill Value="@context.Status" /></TemplateColumn>
+                <PropertyColumn Property="x => x.ProjectCount" Title="Projects" Class="cell-number" />
+                <TemplateColumn Title="" Context="client" Class="cell-actions">
+                    <AuthorizeView Roles="@PortalRoles.Management" Context="authState">
+                        <div class="head-actions">
+                            <button class="btn btn-quiet btn-sm" @onclick="() => Edit(client.Id)">Edit</button>
+                            <button class="btn btn-danger-soft btn-sm"
+                                    disabled="@(client.ProjectCount > 0)"
+                                    title="@(client.ProjectCount > 0 ? "Remove or reassign projects before deleting this client." : "Delete client")"
+                                    @onclick="() => BeginDelete(client)">Delete</button>
+                        </div>
+                    </AuthorizeView>
+                </TemplateColumn>
             </QuickGrid>
         </div>
-        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" Changed="ChangePage" />
+        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
     }
 </section>
 
@@ -57,22 +77,64 @@
     private Guid? editId;
     private string? search;
     private string? error;
-    private string? message;
     private bool editing;
     private bool saving;
+    private bool deleting;
+    private ClientListItem? pendingDelete;
     private int page = 1;
+    private int pageSize = 20;
+    private static readonly IReadOnlyList<PortalSelectOption<ClientStatus>> ClientStatusOptions = Enum.GetValues<ClientStatus>()
+        .Select(value => new PortalSelectOption<ClientStatus>(value, value.ToString()))
+        .ToArray();
 
     protected override Task OnInitializedAsync() => Load();
-    private async Task Load() { error = null; result = await ClientService.SearchAsync(new(page, 20, search)); }
-    private void Create() { input = new(); editId = null; editing = true; message = error = null; }
-    private async Task Edit(Guid id) { input = await ClientService.GetAsync(id); editId = id; editing = true; }
-    private void Cancel() => editing = false;
+    private async Task Load() { error = null; result = await ClientService.SearchAsync(new(page, pageSize, search)); }
+    private void Create() { input = new(); editId = null; editing = true; error = null; }
+    private async Task Edit(Guid id) { error = null; input = await ClientService.GetAsync(id); editId = id; editing = true; }
+    private void Cancel() { editing = false; error = null; }
     private async Task ChangePage(int value) { page = value; await Load(); }
+    private async Task ChangePageSize(int value) { pageSize = value; page = 1; await Load(); }
+
     private async Task Save()
     {
-        saving = true; error = null;
-        try { await ClientService.SaveAsync(editId, input); editing = false; message = "Client saved."; await Load(); }
+        saving = true;
+        error = null;
+        try
+        {
+            await ClientService.SaveAsync(editId, input);
+            editing = false;
+            Toasts.Success("Client saved", $"{input.Name} is up to date.");
+            await Load();
+        }
         catch (Exception ex) { error = ex.Message; }
         finally { saving = false; }
+    }
+
+    private void BeginDelete(ClientListItem client)
+    {
+        pendingDelete = client;
+        error = null;
+    }
+
+    private void CancelDelete() => pendingDelete = null;
+
+    private async Task ConfirmDelete()
+    {
+        if (pendingDelete is null) return;
+        var client = pendingDelete;
+        deleting = true;
+        try
+        {
+            await ClientService.DeleteAsync(client.Id);
+            Toasts.Success("Client deleted", $"{client.Name} was removed from the workspace.");
+            pendingDelete = null;
+            await Load();
+        }
+        catch (Exception ex) { error = ex.Message; }
+        finally
+        {
+            pendingDelete = null;
+            deleting = false;
+        }
     }
 }

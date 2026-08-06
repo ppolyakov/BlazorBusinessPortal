@@ -18,6 +18,7 @@ public static class DependencyInjection
         services.AddScoped<IWorkItemService, WorkItemService>();
         services.AddScoped<ITimeEntryService, TimeEntryService>();
         services.AddScoped<IDashboardService, DashboardService>();
+        services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IReportService, ReportService>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IUserDirectory, UserDirectory>();

@@ -2,7 +2,32 @@
 
 @if (user is not null)
 {
-    <div class="identity-line"><strong>@user.OrganizationName</strong><span>·</span><span>@user.DisplayName</span></div>
+    <details class="profile-menu">
+        <summary class="profile-trigger" aria-label="Open profile menu for @user.DisplayName">
+            <span class="identity-copy"><strong>@user.DisplayName</strong><small>@user.OrganizationName</small></span>
+            <span class="profile-caret" aria-hidden="true"></span>
+            <UserAvatar Name="@user.DisplayName" ImageUrl="@user.AvatarUrl" ColorKey="@user.UserId" Size="md" />
+        </summary>
+        <div class="profile-dropdown" role="menu" aria-label="Profile menu">
+            <div class="profile-summary">
+                <UserAvatar Name="@user.DisplayName" ImageUrl="@user.AvatarUrl" ColorKey="@user.UserId" Size="lg" />
+                <span><strong>@user.DisplayName</strong><small>@user.OrganizationName</small></span>
+            </div>
+            <div class="profile-menu-divider"></div>
+            <a href="Account/Manage" class="profile-menu-item" role="menuitem">
+                <PortalIcon Name="account" />
+                <span><strong>My Account</strong><small>Profile and security</small></span>
+            </a>
+            <form action="Account/Logout" method="post">
+                <AntiforgeryToken />
+                <input type="hidden" name="ReturnUrl" value="" />
+                <button type="submit" class="profile-menu-item profile-menu-signout" role="menuitem">
+                    <PortalIcon Name="logout" />
+                    <span><strong>Sign out</strong><small>End this session</small></span>
+                </button>
+            </form>
+        </div>
+    </details>
 }
 
 @code {

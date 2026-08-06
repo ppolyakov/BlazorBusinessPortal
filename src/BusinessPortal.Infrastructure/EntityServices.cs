@@ -99,6 +99,27 @@ internal sealed class ClientService(IDbContextFactory<ApplicationDbContext> fact
         await db.SaveChangesAsync(cancellationToken);
         return entity.Id;
     }
+
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var user = await CurrentUser.GetAsync(cancellationToken);
+        RequireManager(user);
+        await using var db = await Factory.CreateDbContextAsync(cancellationToken);
+        var entity = await db.Clients.SingleOrDefaultAsync(
+            x => x.OrganizationId == user.OrganizationId && x.Id == id,
+            cancellationToken)
+            ?? throw new ResourceNotFoundException("Client was not found.");
+        if (await db.Projects.AnyAsync(
+            x => x.OrganizationId == user.OrganizationId && x.ClientId == id,
+            cancellationToken))
+        {
+            throw new ConflictException("A client with projects cannot be deleted. Remove or reassign the projects first.");
+        }
+
+        db.Clients.Remove(entity);
+        AddAudit(db, user, "ClientDeleted", nameof(Client), entity.Id, $"Client '{entity.Name}' deleted.");
+        await db.SaveChangesAsync(cancellationToken);
+    }
 }
 
 internal sealed class ProjectService(IDbContextFactory<ApplicationDbContext> factory, ICurrentUser currentUser)
@@ -151,6 +172,7 @@ internal sealed class ProjectService(IDbContextFactory<ApplicationDbContext> fac
         }
 
         Project entity;
+        ProjectStatus? previousStatus = null;
         if (id is null)
         {
             entity = new Project { OrganizationId = user.OrganizationId, ClientId = input.ClientId, Name = input.Name.Trim(), Code = input.Code.Trim().ToUpperInvariant(), StartDate = input.StartDate };
@@ -160,6 +182,7 @@ internal sealed class ProjectService(IDbContextFactory<ApplicationDbContext> fac
         {
             entity = await db.Projects.SingleOrDefaultAsync(x => x.OrganizationId == user.OrganizationId && x.Id == id, cancellationToken)
                 ?? throw new ResourceNotFoundException("Project was not found.");
+            previousStatus = entity.Status;
         }
 
         entity.ClientId = input.ClientId;
@@ -173,6 +196,20 @@ internal sealed class ProjectService(IDbContextFactory<ApplicationDbContext> fac
         entity.UpdatedAtUtc = DateTime.UtcNow;
         entity.ValidateDates();
         AddAudit(db, user, id is null ? "ProjectCreated" : "ProjectUpdated", nameof(Project), entity.Id, $"Project '{entity.Code}' saved.");
+        if (entity.Status == ProjectStatus.Completed && previousStatus != ProjectStatus.Completed)
+        {
+            await NotificationWriter.ToOrganizationAsync(
+                db,
+                user.OrganizationId,
+                user.UserId,
+                NotificationType.ProjectCompleted,
+                "Project completed",
+                $"{user.DisplayName} completed {entity.Code} · {entity.Name}.",
+                "/projects",
+                nameof(Project),
+                entity.Id,
+                cancellationToken);
+        }
         try
         {
             await db.SaveChangesAsync(cancellationToken);
@@ -221,7 +258,18 @@ internal sealed class WorkItemService(IDbContextFactory<ApplicationDbContext> fa
         query = request.Descending ? query.OrderByDescending(x => x.item.DueDate).ThenBy(x => x.item.Title) : query.OrderBy(x => x.item.DueDate).ThenBy(x => x.item.Title);
         var count = await query.CountAsync(cancellationToken);
         var items = await query.Skip((request.SafePage - 1) * request.SafePageSize).Take(request.SafePageSize)
-            .Select(x => new WorkItemListItem(x.item.Id, x.project.Id, x.project.Name, x.item.Title, x.item.Status, x.item.Priority, x.item.AssignedToUserId, x.assigned == null ? null : x.assigned.DisplayName, x.item.DueDate, x.item.EstimatedHours))
+            .Select(x => new WorkItemListItem(
+                x.item.Id,
+                x.project.Id,
+                x.project.Name,
+                x.item.Title,
+                x.item.Status,
+                x.item.Priority,
+                x.item.AssignedToUserId,
+                x.assigned == null ? null : x.assigned.DisplayName,
+                x.item.DueDate,
+                x.item.EstimatedHours,
+                x.assigned == null || x.assigned.AvatarImage == null ? null : "/avatars/" + x.assigned.Id))
             .ToListAsync(cancellationToken);
         return new(items, count, request.SafePage, request.SafePageSize);
     }
@@ -241,12 +289,15 @@ internal sealed class WorkItemService(IDbContextFactory<ApplicationDbContext> fa
         var user = await CurrentUser.GetAsync(cancellationToken);
         RequireManager(user);
         await using var db = await Factory.CreateDbContextAsync(cancellationToken);
-        if (!await db.Projects.AnyAsync(x => x.OrganizationId == user.OrganizationId && x.Id == input.ProjectId, cancellationToken))
-            throw new ResourceNotFoundException("Project was not found.");
+        var project = await db.Projects.AsNoTracking().SingleOrDefaultAsync(
+            x => x.OrganizationId == user.OrganizationId && x.Id == input.ProjectId,
+            cancellationToken)
+            ?? throw new ResourceNotFoundException("Project was not found.");
         if (input.AssignedToUserId is not null && !await db.Users.AnyAsync(x => x.OrganizationId == user.OrganizationId && x.Id == input.AssignedToUserId, cancellationToken))
             throw new ResourceNotFoundException("Assigned user was not found.");
 
         WorkItem entity;
+        string? previousAssigneeUserId = null;
         if (id is null)
         {
             entity = new WorkItem { OrganizationId = user.OrganizationId, ProjectId = input.ProjectId, Title = input.Title.Trim() };
@@ -256,6 +307,7 @@ internal sealed class WorkItemService(IDbContextFactory<ApplicationDbContext> fa
         {
             entity = await db.WorkItems.SingleOrDefaultAsync(x => x.OrganizationId == user.OrganizationId && x.Id == id, cancellationToken)
                 ?? throw new ResourceNotFoundException("Work item was not found.");
+            previousAssigneeUserId = entity.AssignedToUserId;
         }
         entity.ProjectId = input.ProjectId;
         entity.Title = input.Title.Trim();
@@ -267,6 +319,22 @@ internal sealed class WorkItemService(IDbContextFactory<ApplicationDbContext> fa
         entity.EstimatedHours = input.EstimatedHours;
         entity.UpdatedAtUtc = DateTime.UtcNow;
         AddAudit(db, user, id is null ? "WorkItemCreated" : "WorkItemUpdated", nameof(WorkItem), entity.Id, $"Work item '{entity.Title}' saved.");
+        if (entity.AssignedToUserId is not null
+            && entity.AssignedToUserId != previousAssigneeUserId
+            && entity.AssignedToUserId != user.UserId)
+        {
+            NotificationWriter.ToUser(
+                db,
+                user.OrganizationId,
+                entity.AssignedToUserId,
+                user.UserId,
+                NotificationType.WorkItemAssigned,
+                "New work item assigned",
+                $"{user.DisplayName} assigned '{entity.Title}' in {project.Name} to you.",
+                "/work-items",
+                nameof(WorkItem),
+                entity.Id);
+        }
         await db.SaveChangesAsync(cancellationToken);
         return entity.Id;
     }

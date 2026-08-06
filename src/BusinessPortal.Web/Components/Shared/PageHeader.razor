@@ -1,10 +1,10 @@
 <div class="page-head">
-    <div>
+    <div class="page-head-copy">
         @if (!string.IsNullOrWhiteSpace(Eyebrow)) { <p class="eyebrow">@Eyebrow</p> }
         <h1>@Title</h1>
         @if (!string.IsNullOrWhiteSpace(Description)) { <p>@Description</p> }
     </div>
-    <div class="head-actions">@Actions</div>
+    @if (Actions is not null) { <div class="head-actions page-actions">@Actions</div> }
 </div>
 
 @code {

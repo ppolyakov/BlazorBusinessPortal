@@ -1,0 +1,131 @@
+@implements IAsyncDisposable
+@inject INotificationService NotificationService
+@inject NavigationManager NavigationManager
+@inject ToastService Toasts
+
+<details class="notification-center">
+    <summary class="notification-trigger" aria-label="Notifications@(feed?.UnreadCount > 0 ? $", {feed.UnreadCount} unread" : "")">
+        <PortalIcon Name="bell" />
+        @if (feed?.UnreadCount > 0)
+        {
+            <span class="notification-count">@(feed.UnreadCount > 99 ? "99+" : feed.UnreadCount)</span>
+        }
+    </summary>
+    <div class="notification-dropdown">
+        <div class="notification-dropdown-head">
+            <div><strong>Notifications</strong><small>@UnreadLabel</small></div>
+            @if (feed?.UnreadCount > 0)
+            {
+                <form action="/notifications/read-all" method="post">
+                    <AntiforgeryToken />
+                    <input type="hidden" name="returnUrl" value="@ReturnPath" />
+                    <button type="submit" class="notification-mark-all">Mark all read</button>
+                </form>
+            }
+        </div>
+        <div class="notification-list">
+            @if (feed is null)
+            {
+                <div class="notification-loading"><span class="spinner"></span><span>Loading notifications…</span></div>
+            }
+            else if (feed.Items.Count == 0)
+            {
+                <div class="notification-empty"><span><PortalIcon Name="bell" /></span><strong>You're all caught up</strong><small>Updates that need your attention will appear here.</small></div>
+            }
+            else
+            {
+                @foreach (var item in feed.Items)
+                {
+                    <NotificationItem Item="@item" />
+                }
+            }
+        </div>
+        <a href="notifications" class="notification-view-all">View all notifications <span aria-hidden="true">→</span></a>
+    </div>
+</details>
+
+@code {
+    private NotificationFeed? feed;
+    private readonly HashSet<long> knownNotificationIds = [];
+    private CancellationTokenSource? pollingCancellation;
+    private string UnreadLabel => feed?.UnreadCount switch { null => "Checking for updates", 0 => "No unread updates", 1 => "1 unread update", var count => $"{count} unread updates" };
+    private string ReturnPath
+    {
+        get
+        {
+            var relative = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+            return string.IsNullOrWhiteSpace(relative) ? "/" : $"/{relative}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && pollingCancellation is null)
+        {
+            pollingCancellation = new CancellationTokenSource();
+            _ = PollAsync(pollingCancellation.Token);
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            feed = await NotificationService.GetAsync(8);
+            knownNotificationIds.UnionWith(feed.Items.Select(x => x.Id));
+        }
+        catch (ForbiddenException)
+        {
+            feed = new([], 0);
+        }
+    }
+
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                var updated = await NotificationService.GetAsync(8, cancellationToken);
+                var arrived = updated.Items
+                    .Where(x => !x.IsRead && !knownNotificationIds.Contains(x.Id))
+                    .OrderBy(x => x.CreatedAtUtc)
+                    .Take(3)
+                    .ToList();
+                await InvokeAsync(() =>
+                {
+                    foreach (var item in arrived)
+                    {
+                        Toasts.Info(
+                            item.Title,
+                            item.Message,
+                            item.TargetUrl,
+                            "View update",
+                            item.ActorName,
+                            item.ActorAvatarUrl);
+                    }
+                    knownNotificationIds.UnionWith(updated.Items.Select(x => x.Id));
+                    feed = updated;
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (ForbiddenException)
+        {
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        pollingCancellation?.Cancel();
+        pollingCancellation?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

@@ -1,17 +1,17 @@
 ﻿@inherits LayoutComponentBase
 @layout BusinessPortal.Web.Components.Layout.MainLayout
 
-<h1>Manage your account</h1>
+<PageHeader Eyebrow="Account" Title="Account settings" Description="Manage your profile, security methods, and personal data." />
 
-<div>
-    <h2>Change your account settings</h2>
-    <hr />
-    <div class="row">
-        <div class="col-lg-3">
-            <ManageNavMenu />
+<div class="account-layout">
+    <aside class="account-nav-card">
+        <div class="account-nav-intro">
+            <span class="account-nav-intro-icon"><PortalIcon Name="shield" /></span>
+            <div><strong>Your account</strong><small>Profile and security</small></div>
         </div>
-        <div class="col-lg-9">
-            @Body
-        </div>
-    </div>
+        <ManageNavMenu />
+    </aside>
+    <section class="panel account-content">
+        @Body
+    </section>
 </div>

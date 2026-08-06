@@ -2,40 +2,41 @@
 @inject NavigationManager NavigationManager
 
 <div class="brand">
-    <span class="brand-mark">BP</span>
-    <span><strong>BusinessPortal</strong><small>Operations, clearly.</small></span>
+    <BrandLogo />
+    <span class="brand-copy"><strong>Vela</strong><small>Work, clearly.</small></span>
 </div>
 
 <input type="checkbox" id="nav-toggle" class="nav-toggle" />
-<label for="nav-toggle" class="nav-toggle-label">Menu</label>
+<label for="nav-toggle" class="nav-toggle-label" aria-label="Toggle navigation"><span></span><span></span><span></span></label>
 
 <nav class="portal-nav" aria-label="Primary navigation">
     <AuthorizeView>
         <Authorized>
-            <NavLink href="" Match="NavLinkMatch.All"><span>⌂</span> Dashboard</NavLink>
-            <NavLink href="clients"><span>◇</span> Clients</NavLink>
-            <NavLink href="projects"><span>▦</span> Projects</NavLink>
-            <NavLink href="work-items"><span>✓</span> Work items</NavLink>
-            <NavLink href="my-time"><span>◷</span> My time</NavLink>
+            <span class="nav-section-label">Workspace</span>
+            <NavLink href="" Match="NavLinkMatch.All"><PortalIcon Name="dashboard" /> <span>Dashboard</span></NavLink>
+            <NavLink href="clients"><PortalIcon Name="clients" /> <span>Clients</span></NavLink>
+            <NavLink href="projects"><PortalIcon Name="projects" /> <span>Projects</span></NavLink>
+            <NavLink href="work-items"><PortalIcon Name="work" /> <span>Work items</span></NavLink>
+            <NavLink href="my-time"><PortalIcon Name="time" /> <span>My time</span></NavLink>
             <AuthorizeView Roles="@PortalRoles.Management" Context="managementAuth">
-                <NavLink href="approvals"><span>◎</span> Approvals</NavLink>
-                <NavLink href="reports"><span>↗</span> Reports</NavLink>
+                <span class="nav-section-label">Management</span>
+                <NavLink href="approvals"><PortalIcon Name="approvals" /> <span>Approvals</span></NavLink>
+                <NavLink href="reports"><PortalIcon Name="reports" /> <span>Reports</span></NavLink>
             </AuthorizeView>
             <AuthorizeView Roles="@PortalRoles.Administrator" Context="adminAuth">
-                <NavLink href="audit"><span>≡</span> Audit</NavLink>
+                <NavLink href="audit"><PortalIcon Name="audit" /> <span>Audit history</span></NavLink>
             </AuthorizeView>
             <div class="nav-spacer"></div>
-            <NavLink href="Account/Manage"><span>⚙</span> Account</NavLink>
         </Authorized>
         <NotAuthorized>
-            <NavLink href="Account/Login"><span>→</span> Sign in</NavLink>
+            <NavLink href="Account/Login"><PortalIcon Name="arrow" /> <span>Sign in</span></NavLink>
         </NotAuthorized>
     </AuthorizeView>
 </nav>
 
 <div class="sidebar-foot">
     <span class="status-dot"></span>
-    Portfolio demo
+    <span><strong>Workspace online</strong><small>Secure tenant environment</small></span>
 </div>
 
 @code {

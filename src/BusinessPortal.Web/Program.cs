@@ -3,6 +3,7 @@ using BusinessPortal.Infrastructure;
 using BusinessPortal.Web.Components;
 using BusinessPortal.Web.Components.Account;
 using BusinessPortal.Web.Services;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
@@ -11,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddHttpContextAccessor();
 var dataProtectionKeysPath = builder.Configuration["DataProtectionKeysPath"];
 if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
 {
@@ -55,6 +57,7 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     .AddDefaultTokenProviders();
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+builder.Services.AddScoped<ToastService>();
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
 
 var app = builder.Build();
@@ -82,6 +85,47 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 app.MapAdditionalIdentityEndpoints();
+app.MapAvatarEndpoints();
+app.MapPost("/notifications/{id:long}/open", async (
+    long id,
+    HttpContext context,
+    IAntiforgery antiforgery,
+    INotificationService notifications,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        await antiforgery.ValidateRequestAsync(context);
+        var targetUrl = await notifications.MarkReadAsync(id, cancellationToken);
+        return Results.LocalRedirect(SafeLocalUrl(targetUrl));
+    }
+    catch (AntiforgeryValidationException)
+    {
+        return Results.BadRequest();
+    }
+    catch (ResourceNotFoundException)
+    {
+        return Results.NotFound();
+    }
+}).RequireAuthorization();
+app.MapPost("/notifications/read-all", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    INotificationService notifications,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        await antiforgery.ValidateRequestAsync(context);
+        var form = await context.Request.ReadFormAsync(cancellationToken);
+        await notifications.MarkAllReadAsync(cancellationToken);
+        return Results.LocalRedirect(SafeLocalUrl(form["returnUrl"].ToString()));
+    }
+    catch (AntiforgeryValidationException)
+    {
+        return Results.BadRequest();
+    }
+}).RequireAuthorization();
 app.MapHealthChecks("/health");
 
 if (args.Contains("--check-model", StringComparer.Ordinal))
@@ -122,5 +166,12 @@ if (args.Contains("--migrate", StringComparer.Ordinal))
 }
 
 app.Run();
+
+static string SafeLocalUrl(string? targetUrl) =>
+    !string.IsNullOrWhiteSpace(targetUrl)
+    && targetUrl.StartsWith('/')
+    && !targetUrl.StartsWith("//", StringComparison.Ordinal)
+        ? targetUrl
+        : "/";
 
 public partial class Program;

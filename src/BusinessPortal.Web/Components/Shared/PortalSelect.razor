@@ -1,0 +1,139 @@
+@typeparam TValue
+@inherits InputBase<TValue>
+@inject IJSRuntime Js
+
+<div class="portal-picker portal-select @(isOpen ? "is-open" : null)" @onkeydown="HandleKeyDown">
+    <button @ref="trigger"
+            @attributes="AdditionalAttributes"
+            id="@Id"
+            type="button"
+            class="portal-picker-trigger @CssClass"
+            aria-haspopup="listbox"
+            aria-expanded="@isOpen"
+            aria-controls="@menuId"
+            @onclick="Toggle">
+        <span class="portal-picker-value @(SelectedOption is null ? "is-placeholder" : null)">@DisplayText</span>
+        <PortalIcon Name="chevron-down" Class="portal-picker-chevron" />
+    </button>
+
+    @if (isOpen)
+    {
+        <button type="button" class="portal-picker-dismiss" tabindex="-1" aria-label="Close options" @onclick="Close"></button>
+        <div @ref="menu" id="@menuId" class="portal-picker-menu portal-select-menu" role="listbox" aria-label="@MenuLabel">
+            @if (ShowSearch)
+            {
+                <div class="portal-select-search">
+                    <PortalIcon Name="search" />
+                    <input value="@query"
+                           @oninput="Search"
+                           @onkeydown="HandleSearchKeyDown"
+                           @onkeydown:stopPropagation="true"
+                           placeholder="Search options"
+                           aria-label="Search options" />
+                </div>
+            }
+
+            <div class="portal-select-options">
+                @if (FilteredOptions.Count == 0)
+                {
+                    <div class="portal-select-empty">No matching options</div>
+                }
+                else
+                {
+                    @foreach (var option in FilteredOptions)
+                    {
+                        var selected = IsSelected(option);
+                        <button type="button"
+                                class="portal-select-option @(selected ? "is-selected" : null)"
+                                role="option"
+                                aria-selected="@selected"
+                                @onclick="() => Select(option)">
+                            <span class="portal-select-option-copy">
+                                <strong>@option.Label</strong>
+                                @if (!string.IsNullOrWhiteSpace(option.Description))
+                                {
+                                    <small>@option.Description</small>
+                                }
+                            </span>
+                            @if (selected)
+                            {
+                                <PortalIcon Name="check" Class="portal-select-check" />
+                            }
+                        </button>
+                    }
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PortalSelectOption<TValue>> Options { get; set; } = [];
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Choose an option";
+    [Parameter] public string? MenuLabel { get; set; }
+    [Parameter] public bool Searchable { get; set; }
+
+    private readonly string menuId = $"select-{Guid.NewGuid():N}";
+    private ElementReference trigger;
+    private ElementReference menu;
+    private bool isOpen;
+    private bool positionPending;
+    private string query = "";
+
+    private PortalSelectOption<TValue>? SelectedOption => Options.FirstOrDefault(IsSelected);
+    private string DisplayText => SelectedOption?.Label ?? Placeholder;
+    private bool ShowSearch => Searchable || Options.Count > 8;
+    private IReadOnlyList<PortalSelectOption<TValue>> FilteredOptions => string.IsNullOrWhiteSpace(query)
+        ? Options
+        : Options.Where(x => x.Label.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || (x.Description?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)).ToArray();
+
+    protected override bool TryParseValueFromString(string? value, out TValue result, out string validationErrorMessage)
+    {
+        result = default!;
+        validationErrorMessage = "The selected value is not valid.";
+        return false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!positionPending) return;
+        positionPending = false;
+        await Js.InvokeVoidAsync("businessPortal.positionPicker", trigger, menu);
+    }
+
+    private void Toggle()
+    {
+        isOpen = !isOpen;
+        positionPending = isOpen;
+        if (!isOpen) query = "";
+    }
+
+    private void Close()
+    {
+        isOpen = false;
+        query = "";
+    }
+
+    private void Select(PortalSelectOption<TValue> option)
+    {
+        CurrentValue = option.Value;
+        Close();
+    }
+
+    private bool IsSelected(PortalSelectOption<TValue> option) => EqualityComparer<TValue>.Default.Equals(Value, option.Value);
+
+    private void Search(ChangeEventArgs args) => query = args.Value?.ToString() ?? "";
+
+    private void HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") Close();
+        else if (!isOpen && args.Key == "ArrowDown") Toggle();
+    }
+
+    private void HandleSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") Close();
+    }
+}

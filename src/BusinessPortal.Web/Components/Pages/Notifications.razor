@@ -1,0 +1,44 @@
+@page "/notifications"
+@attribute [Authorize]
+@inject INotificationService NotificationService
+
+<PageTitle>Notifications · Vela</PageTitle>
+<PageHeader Eyebrow="Workspace" Title="Notifications" Description="A focused history of approvals, assignments, and delivery updates.">
+    <Actions>
+        @if (feed?.UnreadCount > 0)
+        {
+            <form action="/notifications/read-all" method="post">
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="/notifications" />
+                <button type="submit" class="btn btn-quiet">Mark all as read</button>
+            </form>
+        }
+    </Actions>
+</PageHeader>
+
+<section class="panel notifications-page-panel">
+    @if (feed is null)
+    {
+        <LoadingState Text="Loading notifications…" />
+    }
+    else if (feed.Items.Count == 0)
+    {
+        <EmptyState Title="No notifications yet" Description="Approvals, assignments, and important project changes will appear here." />
+    }
+    else
+    {
+        <div class="notifications-page-summary"><strong>@feed.UnreadCount unread</strong><span>Showing the latest @feed.Items.Count updates</span></div>
+        <div class="notification-list notification-list-page">
+            @foreach (var item in feed.Items)
+            {
+                <NotificationItem Item="@item" />
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private NotificationFeed? feed;
+
+    protected override async Task OnInitializedAsync() => feed = await NotificationService.GetAsync(50);
+}

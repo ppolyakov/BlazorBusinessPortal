@@ -1,0 +1,90 @@
+@implements IDisposable
+@inject ToastService Toasts
+
+<div class="toast-region" aria-live="polite" aria-atomic="false">
+    @foreach (var toast in visibleToasts)
+    {
+        <section class="portal-toast toast-@toast.Kind.ToString().ToLowerInvariant()" role="status" @key="toast.Id">
+            <div class="toast-visual">
+                @if (toast.PersonName is not null)
+                {
+                    <UserAvatar Name="@toast.PersonName" ImageUrl="@toast.PersonAvatarUrl" Size="sm" />
+                }
+                else
+                {
+                    <span class="toast-kind-icon"><PortalIcon Name="@IconName(toast.Kind)" /></span>
+                }
+            </div>
+            <div class="toast-copy">
+                <strong>@toast.Title</strong>
+                @if (!string.IsNullOrWhiteSpace(toast.Message))
+                {
+                    <p>@toast.Message</p>
+                }
+                @if (toast.ActionUrl is not null)
+                {
+                    <a href="@toast.ActionUrl">@(toast.ActionLabel ?? "View details")</a>
+                }
+            </div>
+            <button type="button" class="toast-close" aria-label="Dismiss notification" @onclick="() => Dismiss(toast.Id)">&times;</button>
+            <span class="toast-timer" style="--toast-duration: @toast.Duration.TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture)ms"></span>
+        </section>
+    }
+</div>
+
+@code {
+    private readonly List<ToastMessage> visibleToasts = [];
+    private readonly CancellationTokenSource lifetime = new();
+    private bool disposed;
+
+    protected override void OnInitialized() => Toasts.Requested += Show;
+
+    private void Show(ToastMessage toast)
+    {
+        _ = InvokeAsync(() =>
+        {
+            if (disposed) return;
+            visibleToasts.Add(toast);
+            if (visibleToasts.Count > 4)
+                visibleToasts.RemoveAt(0);
+            StateHasChanged();
+            _ = DismissLaterAsync(toast);
+        });
+    }
+
+    private async Task DismissLaterAsync(ToastMessage toast)
+    {
+        try
+        {
+            await Task.Delay(toast.Duration, lifetime.Token);
+            await InvokeAsync(() => Dismiss(toast.Id));
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void Dismiss(Guid id)
+    {
+        var toast = visibleToasts.FirstOrDefault(x => x.Id == id);
+        if (toast is null) return;
+        visibleToasts.Remove(toast);
+        StateHasChanged();
+    }
+
+    private static string IconName(ToastKind kind) => kind switch
+    {
+        ToastKind.Success => "check-circle",
+        ToastKind.Warning => "alert-circle",
+        ToastKind.Error => "alert-circle",
+        _ => "bell"
+    };
+
+    public void Dispose()
+    {
+        disposed = true;
+        Toasts.Requested -= Show;
+        lifetime.Cancel();
+        lifetime.Dispose();
+    }
+}

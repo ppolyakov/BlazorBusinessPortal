@@ -3,57 +3,74 @@
 @inject IWorkItemService WorkItemService
 @inject IProjectService ProjectService
 @inject IUserDirectory UserDirectory
+@inject NavigationManager Navigation
+@inject ToastService Toasts
 
-<PageTitle>Work items · BusinessPortal</PageTitle>
+<PageTitle>Work items · Vela</PageTitle>
 <PageHeader Eyebrow="Execution" Title="Work items" Description="Prioritized tasks with ownership, due dates, and fast status visibility.">
     <Actions><AuthorizeView Roles="@PortalRoles.Management"><button class="btn btn-primary" @onclick="Create">New work item</button></AuthorizeView></Actions>
 </PageHeader>
 
-@if (message is not null) { <div class="alert alert-success" role="status">@message</div> }
-@if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+@if (error is not null && !editing) { <div class="alert alert-danger" role="alert">@error</div> }
 
-@if (editing)
-{
-    <section class="form-card">
-        <h2>@(editId.HasValue ? "Edit work item" : "Create work item")</h2>
+<PortalModal Visible="editing" Title="@(editId.HasValue ? "Edit work item" : "Create work item")" Closed="Cancel">
+    @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
         <EditForm Model="input" OnValidSubmit="Save" FormName="work-item-form">
             <DataAnnotationsValidator /><ValidationSummary />
             <div class="field-grid">
-                <div class="field"><label for="work-project">Project</label><InputSelect id="work-project" class="form-select" @bind-Value="input.ProjectId"><option value="@Guid.Empty">Choose a project</option>@foreach (var item in projects) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
-                <div class="field"><label for="work-assignee">Assignee</label><InputSelect id="work-assignee" class="form-select" @bind-Value="input.AssignedToUserId"><option value="">Unassigned</option>@foreach (var item in users) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
+                <div class="field"><label for="work-project">Project</label><PortalSelect TValue="Guid" Id="work-project" MenuLabel="Work item project" Searchable="true" Options="ProjectOptions" @bind-Value="input.ProjectId" /></div>
+                <div class="field"><label for="work-assignee">Assignee</label><PortalSelect TValue="string" Id="work-assignee" MenuLabel="Work item assignee" Searchable="true" Options="AssigneeOptions" @bind-Value="input.AssignedToUserId" /></div>
                 <div class="field wide"><label for="work-title">Title</label><InputText id="work-title" class="form-control" @bind-Value="input.Title" /><ValidationMessage For="() => input.Title" /></div>
-                <div class="field"><label for="work-status">Status</label><InputSelect id="work-status" class="form-select" @bind-Value="input.Status">@foreach (var value in Enum.GetValues<WorkItemStatus>()) { <option value="@value">@value</option> }</InputSelect></div>
-                <div class="field"><label for="work-priority">Priority</label><InputSelect id="work-priority" class="form-select" @bind-Value="input.Priority">@foreach (var value in Enum.GetValues<WorkItemPriority>()) { <option value="@value">@value</option> }</InputSelect></div>
-                <div class="field"><label for="work-due">Due date</label><InputDate id="work-due" class="form-control" @bind-Value="input.DueDate" /></div>
+                <div class="field"><label for="work-status">Status</label><PortalSelect TValue="WorkItemStatus" Id="work-status" MenuLabel="Work item status" Options="WorkItemStatusOptions" @bind-Value="input.Status" /></div>
+                <div class="field"><label for="work-priority">Priority</label><PortalSelect TValue="WorkItemPriority" Id="work-priority" MenuLabel="Work item priority" Options="WorkItemPriorityOptions" @bind-Value="input.Priority" /></div>
+                <div class="field"><label for="work-due">Due date</label><PortalDatePicker TValue="NullableDateOnly" Id="work-due" @bind-Value="input.DueDate" /></div>
                 <div class="field"><label for="work-estimate">Estimated hours</label><InputNumber id="work-estimate" class="form-control" @bind-Value="input.EstimatedHours" /></div>
                 <div class="field wide"><label for="work-description">Description</label><InputTextArea id="work-description" class="form-control" @bind-Value="input.Description" /></div>
             </div>
             <div class="head-actions"><button class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save work item")</button><button type="button" class="btn btn-quiet" @onclick="Cancel">Cancel</button></div>
         </EditForm>
-    </section>
-}
+</PortalModal>
 
 <section class="panel">
     <div class="toolbar">
-        <div class="filter-bar"><input class="form-control" placeholder="Search tasks" @bind="search" /><select class="form-select" @bind="statusFilter"><option value="">All statuses</option>@foreach (var value in Enum.GetValues<WorkItemStatus>()) { <option value="@value">@value</option> }</select><button class="btn btn-quiet" @onclick="ApplyFilters">Apply</button></div>
-        <span class="muted">Overdue tasks are highlighted</span>
+        <div class="filter-bar">
+            <input class="form-control" placeholder="Search tasks" @bind="search" aria-label="Search work items" />
+            <PortalSelect TValue="NullableGuid" Options="ProjectFilterOptions" @bind-Value="ProjectFilter" aria-label="Filter by project" />
+            <PortalSelect TValue="string" Options="WorkItemStatusFilterOptions" @bind-Value="statusFilter" aria-label="Filter by status" />
+            <button class="btn btn-quiet" @onclick="ApplyFilters">Apply</button>
+        </div>
+        @if (ActiveProjectName is not null)
+        {
+            <div class="active-filter-context" role="status">
+                <PortalIcon Name="projects" />
+                <span>Project: <strong>@ActiveProjectName</strong></span>
+                <button type="button" title="Clear project filter" aria-label="Clear project filter" @onclick="ClearProjectFilter">&times;</button>
+            </div>
+        }
+        else
+        {
+            <span class="muted">Overdue tasks are highlighted</span>
+        }
     </div>
     @if (result is null) { <LoadingState /> }
-    else if (result.Items.Count == 0) { <EmptyState Title="No matching work items" Description="Adjust filters or create a task." /> }
+    else if (result.Items.Count == 0) { <EmptyState Title="No matching work items" Description="@EmptyDescription" /> }
     else
     {
         <div class="table-shell">
             <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
                 <TemplateColumn Title="Work item"><strong>@context.Title</strong><div class="muted">@context.ProjectName</div></TemplateColumn>
-                <TemplateColumn Title="Status"><StatusPill Value="@context.Status" /></TemplateColumn>
-                <TemplateColumn Title="Priority"><StatusPill Value="@context.Priority" /></TemplateColumn>
-                <PropertyColumn Property="x => x.AssignedToName" Title="Assignee" />
-                <TemplateColumn Title="Due"><span class="@DueClass(context)">@context.DueDate?.ToString("yyyy-MM-dd")</span></TemplateColumn>
-                <PropertyColumn Property="x => x.EstimatedHours" Title="Estimate" Format="0.#" />
-                <TemplateColumn Title="" Context="workItem"><AuthorizeView Roles="@PortalRoles.Management" Context="authState"><button class="btn btn-quiet btn-sm" @onclick="() => Edit(workItem.Id)">Edit</button></AuthorizeView></TemplateColumn>
+                <TemplateColumn Title="Status" Class="cell-status"><StatusPill Value="@context.Status" /></TemplateColumn>
+                <TemplateColumn Title="Priority" Class="cell-status"><StatusPill Value="@context.Priority" /></TemplateColumn>
+                <TemplateColumn Title="Assignee">
+                    @if (context.AssignedToName is null) { <span class="muted">Unassigned</span> }
+                    else { <PersonCell Name="@context.AssignedToName" ImageUrl="@context.AssignedToAvatarUrl" ColorKey="@context.AssignedToUserId" Emphasized="false" /> }
+                </TemplateColumn>
+                <TemplateColumn Title="Due" Class="cell-date"><span class="@DueClass(context)">@context.DueDate?.ToString("yyyy-MM-dd")</span></TemplateColumn>
+                <PropertyColumn Property="x => x.EstimatedHours" Title="Estimate" Format="0.#" Class="cell-number" />
+                <TemplateColumn Title="" Context="workItem" Class="cell-actions"><AuthorizeView Roles="@PortalRoles.Management" Context="authState"><button class="btn btn-quiet btn-sm" @onclick="() => Edit(workItem.Id)">Edit</button></AuthorizeView></TemplateColumn>
             </QuickGrid>
         </div>
-        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" Changed="ChangePage" />
+        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
     }
 </section>
 
@@ -67,23 +84,56 @@
     private string? search;
     private string statusFilter = "";
     private string? error;
-    private string? message;
     private bool editing;
     private bool saving;
     private int page = 1;
+    private int pageSize = 20;
+    private IReadOnlyList<PortalSelectOption<Guid>> ProjectOptions => projects
+        .Select(item => new PortalSelectOption<Guid>(item.Id, item.Name))
+        .Prepend(new(Guid.Empty, "Choose a project"))
+        .ToArray();
+    private IReadOnlyList<PortalSelectOption<Guid?>> ProjectFilterOptions => projects
+        .Select(item => new PortalSelectOption<Guid?>((Guid?)item.Id, item.Name))
+        .Prepend(new(null, "All projects"))
+        .ToArray();
+    private string? ActiveProjectName => ProjectFilter.HasValue
+        ? projects.FirstOrDefault(item => item.Id == ProjectFilter.Value)?.Name
+        : null;
+    private string EmptyDescription => ActiveProjectName is null
+        ? "Adjust filters or create a task."
+        : $"No work items match the current filters for {ActiveProjectName}.";
+    private IReadOnlyList<PortalSelectOption<string>> AssigneeOptions => users
+        .Select(item => new PortalSelectOption<string>(item.Id, item.Name))
+        .Prepend(new(null!, "Unassigned"))
+        .ToArray();
+    private static readonly IReadOnlyList<PortalSelectOption<WorkItemStatus>> WorkItemStatusOptions = Enum.GetValues<WorkItemStatus>()
+        .Select(value => new PortalSelectOption<WorkItemStatus>(value, value.ToString()))
+        .ToArray();
+    private static readonly IReadOnlyList<PortalSelectOption<WorkItemPriority>> WorkItemPriorityOptions = Enum.GetValues<WorkItemPriority>()
+        .Select(value => new PortalSelectOption<WorkItemPriority>(value, value.ToString()))
+        .ToArray();
+    private static readonly IReadOnlyList<PortalSelectOption<string>> WorkItemStatusFilterOptions = Enum.GetValues<WorkItemStatus>()
+        .Select(value => new PortalSelectOption<string>(value.ToString(), value.ToString()))
+        .Prepend(new("", "All statuses"))
+        .ToArray();
 
     protected override async Task OnInitializedAsync() { projects = await ProjectService.LookupsAsync(); users = await UserDirectory.ListAsync(); await Load(); }
-    private async Task Load() => result = await WorkItemService.SearchAsync(new(page, 20, search), ProjectFilter, Enum.TryParse<WorkItemStatus>(statusFilter, out var status) ? status : null);
-    private async Task ApplyFilters() { page = 1; await Load(); }
-    private void Create() { input = new WorkItemInput { ProjectId = ProjectFilter ?? Guid.Empty }; editId = null; editing = true; message = error = null; }
-    private async Task Edit(Guid id) { input = await WorkItemService.GetAsync(id); editId = id; editing = true; }
-    private void Cancel() => editing = false;
+    private async Task Load() => result = await WorkItemService.SearchAsync(new(page, pageSize, search), ProjectFilter, Enum.TryParse<WorkItemStatus>(statusFilter, out var status) ? status : null);
+    private async Task ApplyFilters() { page = 1; SyncProjectQuery(); await Load(); }
+    private async Task ClearProjectFilter() { ProjectFilter = null; page = 1; SyncProjectQuery(); await Load(); }
+    private void SyncProjectQuery() => Navigation.NavigateTo(
+        Navigation.GetUriWithQueryParameter("project", ProjectFilter),
+        replace: true);
+    private void Create() { input = new WorkItemInput { ProjectId = ProjectFilter ?? Guid.Empty }; editId = null; editing = true; error = null; }
+    private async Task Edit(Guid id) { error = null; input = await WorkItemService.GetAsync(id); editId = id; editing = true; }
+    private void Cancel() { editing = false; error = null; }
     private async Task ChangePage(int value) { page = value; await Load(); }
+    private async Task ChangePageSize(int value) { pageSize = value; page = 1; await Load(); }
     private static string DueClass(WorkItemListItem item) => item.DueDate < DateOnly.FromDateTime(DateTime.Today) && item.Status != WorkItemStatus.Done ? "status-pill overdue" : "";
     private async Task Save()
     {
         saving = true; error = null;
-        try { await WorkItemService.SaveAsync(editId, input); editing = false; message = "Work item saved."; await Load(); }
+        try { await WorkItemService.SaveAsync(editId, input); editing = false; Toasts.Success("Work item saved", input.Title); await Load(); }
         catch (Exception ex) { error = ex.Message; }
         finally { saving = false; }
     }

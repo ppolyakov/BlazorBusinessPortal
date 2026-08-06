@@ -1,6 +1,6 @@
 # Architecture
 
-BusinessPortal is a modular monolith deployed as one ASP.NET Core process with one PostgreSQL database.
+Vela is a modular monolith deployed as one ASP.NET Core process with one PostgreSQL database.
 
 ```mermaid
 flowchart LR

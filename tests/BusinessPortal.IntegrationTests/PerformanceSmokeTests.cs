@@ -40,7 +40,8 @@ public sealed class PerformanceSmokeTests(PostgreSqlFixture fixture, ITestOutput
 
         output.WriteLine($"1,200-row PostgreSQL report query: {timer.ElapsedMilliseconds} ms");
         Assert.Equal(1_200, report.Details.TotalCount);
-        Assert.Equal(25, report.Details.Items.Count);
+        Assert.Equal(10, report.Details.Items.Count);
+        Assert.Equal(10, report.Details.PageSize);
         Assert.True(timer.Elapsed < TimeSpan.FromSeconds(30), $"Smoke query took {timer.Elapsed}.");
     }
 }

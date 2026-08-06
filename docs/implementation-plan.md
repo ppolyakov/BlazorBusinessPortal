@@ -1,4 +1,4 @@
-# BusinessPortal Implementation Plan
+# Vela Implementation Plan
 
 This plan tracks delivery as tested vertical slices.
 
@@ -13,7 +13,7 @@ This plan tracks delivery as tested vertical slices.
 - Create the modular monolith solution and project references.
 - Configure `net10.0`, nullable reference types, analyzers, and formatting.
 - Create the Blazor Web App shell with global Interactive Server rendering.
-- Replace template content with the BusinessPortal navigation and visual system.
+- Replace template content with the Vela navigation and visual system.
 
 ## Stage 2 — PostgreSQL, Identity, and organizations
 
@@ -79,4 +79,3 @@ This plan tracks delivery as tested vertical slices.
 - Run restore, format verification, Release build, all tests, package vulnerability audit, migrations, and Docker checks.
 - Review the complete diff, secrets, dependencies, and documented limitations.
 - Exercise the primary scenario for each role and verify two-organization isolation.
-

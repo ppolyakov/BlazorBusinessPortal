@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Context
 
-BusinessPortal is a portfolio-scale business application with related workflows and a single operational database. It needs clear boundaries without distributed-system overhead.
+Vela is a portfolio-scale business application with related workflows and a single operational database. It needs clear boundaries without distributed-system overhead.
 
 ## Decision
 
@@ -20,4 +20,3 @@ Deliver complete user scenarios vertically and keep the solution buildable after
 ## Consequences
 
 The design keeps business rules testable and deployment simple. Application services remain explicit; some purposeful query code is preferable to a generic abstraction that hides tenant and paging rules.
-

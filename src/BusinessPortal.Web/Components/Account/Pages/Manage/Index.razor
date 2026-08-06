@@ -10,11 +10,49 @@
 
 <PageTitle>Profile</PageTitle>
 
-<h3>Profile</h3>
+<div class="account-section-head">
+    <div><p class="eyebrow">Personal profile</p><h3>Profile</h3><p>Keep your contact details and team identity up to date.</p></div>
+</div>
 <StatusMessage />
 
-<div class="row">
-    <div class="col-xl-6">
+@if (AvatarNotice is { } notice)
+{
+    <div class="toast-region toast-region-static" aria-live="polite">
+        <section class="portal-toast @(notice.IsError ? "toast-error" : "toast-success")" role="status">
+            <span class="toast-kind-icon"><PortalIcon Name="@(notice.IsError ? "alert-circle" : "check-circle")" /></span>
+            <div class="toast-copy"><strong>@notice.Title</strong><p>@notice.Message</p></div>
+            <a class="toast-close" href="/Account/Manage" aria-label="Dismiss notification">&times;</a>
+        </section>
+    </div>
+}
+
+<div class="profile-settings-grid">
+    <section class="profile-photo-card">
+        <div class="profile-photo-preview">
+            <UserAvatar Name="@(user?.DisplayName ?? "User")" ImageUrl="@AvatarUrl" ColorKey="@user?.Id" Size="xl" />
+            <div><strong>@user?.DisplayName</strong><span>Shown to teammates across the workspace</span></div>
+        </div>
+        <form action="/account/avatar" method="post" enctype="multipart/form-data" class="avatar-upload-form">
+            <AntiforgeryToken />
+            <label class="avatar-file-field" for="avatar-file">
+                <span class="avatar-file-icon"><PortalIcon Name="upload" /></span>
+                <span><strong>Choose a profile photo</strong><small>PNG, JPEG or WebP · up to 2 MB</small></span>
+                <input id="avatar-file" type="file" name="avatar" accept="image/png,image/jpeg,image/webp" required />
+            </label>
+            <button type="submit" class="btn btn-primary">Upload photo</button>
+        </form>
+        @if (hasAvatar)
+        {
+            <form action="/account/avatar/remove" method="post">
+                <AntiforgeryToken />
+                <button type="submit" class="btn btn-quiet btn-sm">Remove current photo</button>
+            </form>
+        }
+    </section>
+
+    <section class="profile-details-card">
+        <h4>Contact details</h4>
+        <p class="muted">Used for account communication and recovery.</p>
         <EditForm Model="Input" FormName="profile" OnValidSubmit="OnValidSubmitAsync" method="post">
             <DataAnnotationsValidator />
             <ValidationSummary class="text-danger" role="alert" />
@@ -29,13 +67,29 @@
             </div>
             <button type="submit" class="w-100 btn btn-lg btn-primary">Save</button>
         </EditForm>
-    </div>
+    </section>
 </div>
 
 @code {
     private ApplicationUser? user;
     private string? username;
     private string? phoneNumber;
+    private bool hasAvatar;
+    private string? AvatarUrl => hasAvatar && user is not null ? $"/avatars/{Uri.EscapeDataString(user.Id)}" : null;
+
+    [SupplyParameterFromQuery(Name = "avatarStatus")]
+    private string? AvatarStatus { get; set; }
+
+    private (string Title, string Message, bool IsError)? AvatarNotice => AvatarStatus switch
+    {
+        "updated" => ("Profile photo updated", "Your new photo is now visible across the workspace.", false),
+        "removed" => ("Profile photo removed", "Your initials will be shown until you upload another photo.", false),
+        "missing" => ("Choose a photo", "Select an image before uploading.", true),
+        "too-large" => ("Photo is too large", "Choose an image smaller than 2 MB.", true),
+        "invalid-type" => ("Unsupported image", "Use a PNG, JPEG or WebP image.", true),
+        "failed" => ("Photo could not be saved", "Try again. If the issue continues, contact an administrator.", true),
+        _ => null
+    };
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -56,6 +110,7 @@
 
         username = await UserManager.GetUserNameAsync(user);
         phoneNumber = await UserManager.GetPhoneNumberAsync(user);
+        hasAvatar = user.AvatarImage is not null;
 
         Input.PhoneNumber ??= phoneNumber;
     }

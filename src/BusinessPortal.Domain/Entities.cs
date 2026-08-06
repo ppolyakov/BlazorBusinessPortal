@@ -168,3 +168,19 @@ public sealed class AuditEntry
     public required string Summary { get; set; }
     public DateTime OccurredAtUtc { get; set; } = DateTime.UtcNow;
 }
+
+public sealed class Notification
+{
+    public long Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public required string RecipientUserId { get; set; }
+    public string? ActorUserId { get; set; }
+    public NotificationType Type { get; set; }
+    public required string Title { get; set; }
+    public required string Message { get; set; }
+    public required string TargetUrl { get; set; }
+    public string? EntityType { get; set; }
+    public string? EntityId { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? ReadAtUtc { get; set; }
+}

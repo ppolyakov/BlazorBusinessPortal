@@ -31,7 +31,16 @@ internal sealed class DashboardService(IDbContextFactory<ApplicationDbContext> f
                               join actor in db.Users.AsNoTracking() on audit.UserId equals actor.Id
                               where audit.OrganizationId == user.OrganizationId
                               orderby audit.OccurredAtUtc descending
-                              select new AuditListItem(audit.Id, actor.DisplayName, audit.Action, audit.EntityType, audit.EntityId, audit.Summary, audit.OccurredAtUtc))
+                              select new AuditListItem(
+                                  audit.Id,
+                                  actor.DisplayName,
+                                  audit.Action,
+                                  audit.EntityType,
+                                  audit.EntityId,
+                                  audit.Summary,
+                                  audit.OccurredAtUtc,
+                                  actor.Id,
+                                  actor.AvatarImage == null ? null : "/avatars/" + actor.Id))
                               .Take(6).ToListAsync(cancellationToken);
         var upcoming = await (from item in db.WorkItems.AsNoTracking()
                               join project in db.Projects.AsNoTracking() on item.ProjectId equals project.Id
@@ -39,7 +48,18 @@ internal sealed class DashboardService(IDbContextFactory<ApplicationDbContext> f
                               from assigned in assignments.DefaultIfEmpty()
                               where item.OrganizationId == user.OrganizationId && item.Status != WorkItemStatus.Done && item.DueDate >= today
                               orderby item.DueDate
-                              select new WorkItemListItem(item.Id, project.Id, project.Name, item.Title, item.Status, item.Priority, item.AssignedToUserId, assigned == null ? null : assigned.DisplayName, item.DueDate, item.EstimatedHours))
+                              select new WorkItemListItem(
+                                  item.Id,
+                                  project.Id,
+                                  project.Name,
+                                  item.Title,
+                                  item.Status,
+                                  item.Priority,
+                                  item.AssignedToUserId,
+                                  assigned == null ? null : assigned.DisplayName,
+                                  item.DueDate,
+                                  item.EstimatedHours,
+                                  assigned == null || assigned.AvatarImage == null ? null : "/avatars/" + assigned.Id))
                               .Take(6).ToListAsync(cancellationToken);
         return new(activeClients, activeProjects, monthHours, awaiting, chart, activity, upcoming);
     }
@@ -64,7 +84,16 @@ internal sealed class ReportService(IDbContextFactory<ApplicationDbContext> fact
         var page = Math.Max(1, filter.Page);
         var rows = await query.OrderByDescending(x => x.Entry.WorkDate).ThenBy(x => x.Project.Name)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(x => new ReportRow(x.Entry.WorkDate, x.Client.Name, x.Project.Name, x.User.DisplayName, x.Entry.Hours, x.Entry.Description, x.Entry.Status))
+            .Select(x => new ReportRow(
+                x.Entry.WorkDate,
+                x.Client.Name,
+                x.Project.Name,
+                x.User.DisplayName,
+                x.Entry.Hours,
+                x.Entry.Description,
+                x.Entry.Status,
+                x.User.Id,
+                x.User.AvatarImage == null ? null : "/avatars/" + x.User.Id))
             .ToListAsync(cancellationToken);
         return new(totals, new(rows, totalCount, page, pageSize), totalHours);
     }
@@ -76,7 +105,16 @@ internal sealed class ReportService(IDbContextFactory<ApplicationDbContext> fact
         await using var db = await Factory.CreateDbContextAsync(cancellationToken);
         var rows = await BuildQuery(db, user.OrganizationId, filter).OrderByDescending(x => x.Entry.WorkDate)
             .Take(MaximumExportRows + 1)
-            .Select(x => new ReportRow(x.Entry.WorkDate, x.Client.Name, x.Project.Name, x.User.DisplayName, x.Entry.Hours, x.Entry.Description, x.Entry.Status))
+            .Select(x => new ReportRow(
+                x.Entry.WorkDate,
+                x.Client.Name,
+                x.Project.Name,
+                x.User.DisplayName,
+                x.Entry.Hours,
+                x.Entry.Description,
+                x.Entry.Status,
+                x.User.Id,
+                x.User.AvatarImage == null ? null : "/avatars/" + x.User.Id))
             .ToListAsync(cancellationToken);
         if (rows.Count > MaximumExportRows) throw new ConflictException($"Export is limited to {MaximumExportRows:N0} rows. Narrow the filters.");
         var content = ExcelReportWriter.Create(rows, filter, user.OrganizationName);
@@ -112,6 +150,26 @@ internal sealed class ReportService(IDbContextFactory<ApplicationDbContext> fact
 internal sealed class AuditService(IDbContextFactory<ApplicationDbContext> factory, ICurrentUser currentUser)
     : PortalService(factory, currentUser), IAuditService
 {
+    public async Task<AuditFilterOptions> GetFilterOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        var user = await CurrentUser.GetAsync(cancellationToken);
+        if (!user.IsInRole(PortalRoles.Administrator)) throw new ForbiddenException();
+        await using var db = await Factory.CreateDbContextAsync(cancellationToken);
+        var actions = await db.AuditEntries.AsNoTracking()
+            .Where(x => x.OrganizationId == user.OrganizationId)
+            .Select(x => x.Action)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToListAsync(cancellationToken);
+        var entityTypes = await db.AuditEntries.AsNoTracking()
+            .Where(x => x.OrganizationId == user.OrganizationId)
+            .Select(x => x.EntityType)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToListAsync(cancellationToken);
+        return new(actions, entityTypes);
+    }
+
     public async Task<PageResult<AuditListItem>> SearchAsync(PageRequest request, string? action = null, string? entityType = null, DateOnly? from = null, DateOnly? through = null, CancellationToken cancellationToken = default)
     {
         var user = await CurrentUser.GetAsync(cancellationToken);
@@ -127,7 +185,16 @@ internal sealed class AuditService(IDbContextFactory<ApplicationDbContext> facto
         if (through.HasValue) { var end = through.Value.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc); query = query.Where(x => x.audit.OccurredAtUtc < end); }
         var count = await query.CountAsync(cancellationToken);
         var items = await query.OrderByDescending(x => x.audit.OccurredAtUtc).Skip((request.SafePage - 1) * request.SafePageSize).Take(request.SafePageSize)
-            .Select(x => new AuditListItem(x.audit.Id, x.actor.DisplayName, x.audit.Action, x.audit.EntityType, x.audit.EntityId, x.audit.Summary, x.audit.OccurredAtUtc))
+            .Select(x => new AuditListItem(
+                x.audit.Id,
+                x.actor.DisplayName,
+                x.audit.Action,
+                x.audit.EntityType,
+                x.audit.EntityId,
+                x.audit.Summary,
+                x.audit.OccurredAtUtc,
+                x.actor.Id,
+                x.actor.AvatarImage == null ? null : "/avatars/" + x.actor.Id))
             .ToListAsync(cancellationToken);
         return new(items, count, request.SafePage, request.SafePageSize);
     }

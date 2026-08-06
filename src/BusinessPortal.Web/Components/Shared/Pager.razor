@@ -1,8 +1,24 @@
 <div class="pager-row">
-    <span>@TotalCount item@(TotalCount == 1 ? "" : "s") · Page @Page of @TotalPages</span>
-    <div class="head-actions">
-        <button class="btn btn-quiet btn-sm" disabled="@(Page <= 1)" @onclick="() => Changed.InvokeAsync(Page - 1)">Previous</button>
-        <button class="btn btn-quiet btn-sm" disabled="@(Page >= TotalPages)" @onclick="() => Changed.InvokeAsync(Page + 1)">Next</button>
+    <div class="pager-summary">
+        <span><strong>@TotalCount</strong> item@(TotalCount == 1 ? "" : "s")</span>
+        @if (PageSizeChanged.HasDelegate)
+        {
+            <div class="pager-page-size">
+                <span>Rows per page</span>
+                <PortalSelect TValue="int"
+                              Options="PageSizeOptions"
+                              Value="PageSize"
+                              ValueChanged="ChangePageSize"
+                              ValueExpression="() => PageSize"
+                              MenuLabel="Rows per page"
+                              aria-label="Rows per page" />
+            </div>
+        }
+    </div>
+    <div class="pager-controls">
+        <button class="btn btn-quiet btn-sm pager-button" aria-label="Previous page" disabled="@(Page <= 1)" @onclick="() => Changed.InvokeAsync(Page - 1)">←</button>
+        <span>Page <strong>@Page</strong> of @TotalPages</span>
+        <button class="btn btn-quiet btn-sm pager-button" aria-label="Next page" disabled="@(Page >= TotalPages)" @onclick="() => Changed.InvokeAsync(Page + 1)">→</button>
     </div>
 </div>
 
@@ -10,5 +26,16 @@
     [Parameter] public int Page { get; set; }
     [Parameter] public int TotalPages { get; set; }
     [Parameter] public int TotalCount { get; set; }
+    [Parameter] public int PageSize { get; set; } = 20;
     [Parameter] public EventCallback<int> Changed { get; set; }
+    [Parameter] public EventCallback<int> PageSizeChanged { get; set; }
+
+    private static readonly IReadOnlyList<PortalSelectOption<int>> PageSizeOptions =
+    [
+        new(10, "10"),
+        new(20, "20"),
+        new(50, "50")
+    ];
+
+    private Task ChangePageSize(int value) => PageSizeChanged.InvokeAsync(value);
 }

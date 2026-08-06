@@ -6,21 +6,18 @@
     </aside>
     <main class="main-shell">
         <header class="topbar">
-            <div>
-                <div class="eyebrow">Business workspace</div>
-                <AuthorizeView>
-                    <Authorized><CurrentIdentity /></Authorized>
-                    <NotAuthorized><strong>Welcome to BusinessPortal</strong></NotAuthorized>
-                </AuthorizeView>
+            <div class="topbar-context">
+                <div class="topbar-label">Business workspace</div>
+                <strong class="topbar-title">Operations workspace</strong>
             </div>
             <AuthorizeView>
                 <Authorized>
-                    <form action="Account/Logout" method="post">
-                        <AntiforgeryToken />
-                        <input type="hidden" name="ReturnUrl" value="" />
-                        <button type="submit" class="btn btn-quiet">Sign out</button>
-                    </form>
+                    <div class="topbar-user-actions">
+                        <NotificationCenter />
+                        <CurrentIdentity />
+                    </div>
                 </Authorized>
+                <NotAuthorized><strong>Welcome to Vela</strong></NotAuthorized>
             </AuthorizeView>
         </header>
         <article class="content">
@@ -28,6 +25,8 @@
         </article>
     </main>
 </div>
+
+<ToastHost />
 
 <div id="blazor-error-ui" data-nosnippet>
     Something went wrong. <a href="." class="reload">Reload</a>

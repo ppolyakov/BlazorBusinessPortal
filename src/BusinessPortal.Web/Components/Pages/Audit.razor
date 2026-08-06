@@ -2,13 +2,25 @@
 @attribute [Authorize(Roles = PortalRoles.Administrator)]
 @inject IAuditService AuditService
 
-<PageTitle>Audit · BusinessPortal</PageTitle>
+<PageTitle>Audit · Vela</PageTitle>
 <PageHeader Eyebrow="Administration" Title="Audit history" Description="A concise, tenant-scoped record of important changes and workflow decisions." />
 
 @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
 <section class="panel">
     <div class="toolbar">
-        <div class="filter-bar"><input class="form-control" placeholder="Action, e.g. ProjectUpdated" @bind="action" /><input class="form-control" placeholder="Entity type" @bind="entityType" /><InputDate class="form-control" @bind-Value="from" aria-label="From date" /><InputDate class="form-control" @bind-Value="through" aria-label="Through date" /><button class="btn btn-quiet" @onclick="Apply">Apply</button></div>
+        <div class="filter-bar">
+            <div class="field">
+                <label for="audit-action">Action</label>
+                <PortalSelect TValue="string" Id="audit-action" MenuLabel="Audit action" Searchable="true" Options="ActionOptions" @bind-Value="action" />
+            </div>
+            <div class="field">
+                <label for="audit-entity">Entity type</label>
+                <PortalSelect TValue="string" Id="audit-entity" MenuLabel="Audit entity type" Searchable="true" Options="EntityTypeOptions" @bind-Value="entityType" />
+            </div>
+            <div class="field"><label for="audit-from">From</label><PortalDatePicker TValue="NullableDateOnly" Id="audit-from" @bind-Value="from" /></div>
+            <div class="field"><label for="audit-through">Through</label><PortalDatePicker TValue="NullableDateOnly" Id="audit-through" @bind-Value="through" /></div>
+            <button class="btn btn-quiet" @onclick="Apply">Apply</button>
+        </div>
     </div>
     @if (result is null) { <LoadingState Text="Loading audit history…" /> }
     else if (result.Items.Count == 0) { <EmptyState Title="No audit events" Description="No events match the selected filters." /> }
@@ -16,28 +28,50 @@
     {
         <div class="table-shell">
             <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
-                <PropertyColumn Property="x => x.OccurredAtUtc" Title="UTC time" Format="yyyy-MM-dd HH:mm" />
-                <PropertyColumn Property="x => x.UserName" Title="Actor" />
+                <PropertyColumn Property="x => x.OccurredAtUtc" Title="UTC time" Format="yyyy-MM-dd HH:mm" Class="cell-date" />
+                <TemplateColumn Title="Actor"><PersonCell Name="@context.UserName" ImageUrl="@context.UserAvatarUrl" ColorKey="@context.UserId" /></TemplateColumn>
                 <PropertyColumn Property="x => x.Action" Title="Action" />
                 <PropertyColumn Property="x => x.EntityType" Title="Entity" />
                 <PropertyColumn Property="x => x.EntityId" Title="Identifier" />
                 <PropertyColumn Property="x => x.Summary" Title="Safe summary" />
             </QuickGrid>
         </div>
-        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" Changed="ChangePage" />
+        <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
     }
 </section>
 
 @code {
     private PageResult<AuditListItem>? result;
+    private AuditFilterOptions filterOptions = new([], []);
     private string? action;
     private string? entityType;
-    private DateOnly? from;
-    private DateOnly? through;
+    private DateOnly? from = DateOnly.FromDateTime(DateTime.Today).AddMonths(-2);
+    private DateOnly? through = DateOnly.FromDateTime(DateTime.Today);
     private string? error;
     private int page = 1;
-    protected override Task OnInitializedAsync() => Load();
-    private async Task Load() { try { error = null; result = await AuditService.SearchAsync(new(page, 25), action, entityType, from, through); } catch (Exception ex) { error = ex.Message; } }
+    private int pageSize = 20;
+    private IReadOnlyList<PortalSelectOption<string>> ActionOptions => filterOptions.Actions
+        .Select(value => new PortalSelectOption<string>(value, value))
+        .Prepend(new(null!, "All actions"))
+        .ToArray();
+    private IReadOnlyList<PortalSelectOption<string>> EntityTypeOptions => filterOptions.EntityTypes
+        .Select(value => new PortalSelectOption<string>(value, value))
+        .Prepend(new(null!, "All entity types"))
+        .ToArray();
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            filterOptions = await AuditService.GetFilterOptionsAsync();
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+    private async Task Load() { try { error = null; result = await AuditService.SearchAsync(new(page, pageSize), action, entityType, from, through); } catch (Exception ex) { error = ex.Message; } }
     private async Task Apply() { page = 1; await Load(); }
     private async Task ChangePage(int value) { page = value; await Load(); }
+    private async Task ChangePageSize(int value) { pageSize = value; page = 1; await Load(); }
 }

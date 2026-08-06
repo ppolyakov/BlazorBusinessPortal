@@ -9,10 +9,13 @@ internal sealed class UserDirectory(IDbContextFactory<ApplicationDbContext> fact
     {
         var user = await currentUser.GetAsync(cancellationToken);
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        return await db.Users.AsNoTracking()
+        var users = await db.Users.AsNoTracking()
             .Where(x => x.OrganizationId == user.OrganizationId && x.IsActive)
             .OrderBy(x => x.DisplayName)
-            .Select(x => new LookupItem<string>(x.Id, x.DisplayName))
+            .Select(x => new { x.Id, x.DisplayName, HasAvatar = x.AvatarImage != null })
             .ToListAsync(cancellationToken);
+        return users
+            .Select(x => new LookupItem<string>(x.Id, x.DisplayName, AvatarUrlBuilder.For(x.Id, x.HasAvatar)))
+            .ToList();
     }
 }

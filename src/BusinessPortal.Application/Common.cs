@@ -19,7 +19,8 @@ public sealed record CurrentUserInfo(
     Guid OrganizationId,
     string OrganizationName,
     string DisplayName,
-    IReadOnlySet<string> Roles)
+    IReadOnlySet<string> Roles,
+    string? AvatarUrl = null)
 {
     public bool IsInRole(string role) => Roles.Contains(role);
     public bool CanManage => IsInRole(PortalRoles.Administrator) || IsInRole(PortalRoles.Manager);
@@ -109,12 +110,18 @@ public sealed class TimeEntryInput
 
 public sealed record ClientListItem(Guid Id, string Name, string? ContactName, string? ContactEmail, Domain.ClientStatus Status, int ProjectCount);
 public sealed record ProjectListItem(Guid Id, Guid ClientId, string ClientName, string Name, string Code, Domain.ProjectStatus Status, decimal BudgetHours, decimal UsedHours, DateOnly StartDate, DateOnly? EndDate);
-public sealed record WorkItemListItem(Guid Id, Guid ProjectId, string ProjectName, string Title, Domain.WorkItemStatus Status, Domain.WorkItemPriority Priority, string? AssignedToUserId, string? AssignedToName, DateOnly? DueDate, decimal EstimatedHours);
-public sealed record TimeEntryListItem(Guid Id, Guid ProjectId, string ProjectName, Guid? WorkItemId, string? WorkItemTitle, string UserId, string UserName, DateOnly WorkDate, decimal Hours, string Description, Domain.TimeEntryStatus Status, string? ReviewComment, uint Version);
-public sealed record LookupItem<T>(T Id, string Name);
-public sealed record AuditListItem(long Id, string UserName, string Action, string EntityType, string EntityId, string Summary, DateTime OccurredAtUtc);
+public sealed record WorkItemListItem(Guid Id, Guid ProjectId, string ProjectName, string Title, Domain.WorkItemStatus Status, Domain.WorkItemPriority Priority, string? AssignedToUserId, string? AssignedToName, DateOnly? DueDate, decimal EstimatedHours, string? AssignedToAvatarUrl = null);
+public sealed record TimeEntryListItem(Guid Id, Guid ProjectId, string ProjectName, Guid? WorkItemId, string? WorkItemTitle, string UserId, string UserName, DateOnly WorkDate, decimal Hours, string Description, Domain.TimeEntryStatus Status, string? ReviewComment, uint Version, string? UserAvatarUrl = null);
+public sealed record LookupItem<T>(T Id, string Name, string? AvatarUrl = null);
+public sealed record AuditListItem(long Id, string UserName, string Action, string EntityType, string EntityId, string Summary, DateTime OccurredAtUtc, string? UserId = null, string? UserAvatarUrl = null);
+public sealed record AuditFilterOptions(IReadOnlyList<string> Actions, IReadOnlyList<string> EntityTypes);
 public sealed record DashboardModel(int ActiveClients, int ActiveProjects, decimal MonthHours, int AwaitingApproval, IReadOnlyList<ChartItem> HoursByProject, IReadOnlyList<AuditListItem> RecentActivity, IReadOnlyList<WorkItemListItem> UpcomingWork);
 public sealed record ChartItem(string Label, decimal Value);
+public sealed record NotificationListItem(long Id, Domain.NotificationType Type, string Title, string Message, string TargetUrl, DateTime CreatedAtUtc, DateTime? ReadAtUtc, string? ActorName = null, string? ActorAvatarUrl = null)
+{
+    public bool IsRead => ReadAtUtc.HasValue;
+}
+public sealed record NotificationFeed(IReadOnlyList<NotificationListItem> Items, int UnreadCount);
 public sealed class ReportFilter(DateOnly from, DateOnly to)
 {
     public DateOnly From { get; set; } = from;
@@ -123,9 +130,9 @@ public sealed class ReportFilter(DateOnly from, DateOnly to)
     public Guid? ProjectId { get; set; }
     public string? UserId { get; set; }
     public int Page { get; set; } = 1;
-    public int PageSize { get; set; } = 25;
+    public int PageSize { get; set; } = 10;
 }
-public sealed record ReportRow(DateOnly WorkDate, string ClientName, string ProjectName, string UserName, decimal Hours, string Description, Domain.TimeEntryStatus Status);
+public sealed record ReportRow(DateOnly WorkDate, string ClientName, string ProjectName, string UserName, decimal Hours, string Description, Domain.TimeEntryStatus Status, string? UserId = null, string? UserAvatarUrl = null);
 public sealed record ReportModel(IReadOnlyList<ChartItem> Totals, PageResult<ReportRow> Details, decimal TotalHours);
 
 public interface IClientService
@@ -133,6 +140,7 @@ public interface IClientService
     Task<PageResult<ClientListItem>> SearchAsync(PageRequest request, CancellationToken cancellationToken = default);
     Task<ClientInput> GetAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Guid> SaveAsync(Guid? id, ClientInput input, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }
 
 public interface IProjectService
@@ -169,6 +177,13 @@ public interface IDashboardService
     Task<DashboardModel> GetAsync(CancellationToken cancellationToken = default);
 }
 
+public interface INotificationService
+{
+    Task<NotificationFeed> GetAsync(int take = 10, CancellationToken cancellationToken = default);
+    Task<string> MarkReadAsync(long id, CancellationToken cancellationToken = default);
+    Task MarkAllReadAsync(CancellationToken cancellationToken = default);
+}
+
 public interface IReportService
 {
     Task<ReportModel> GetAsync(ReportFilter filter, CancellationToken cancellationToken = default);
@@ -178,6 +193,7 @@ public interface IReportService
 public interface IAuditService
 {
     Task<PageResult<AuditListItem>> SearchAsync(PageRequest request, string? action = null, string? entityType = null, DateOnly? from = null, DateOnly? through = null, CancellationToken cancellationToken = default);
+    Task<AuditFilterOptions> GetFilterOptionsAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IUserDirectory

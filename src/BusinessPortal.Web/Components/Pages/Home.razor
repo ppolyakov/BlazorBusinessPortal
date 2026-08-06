@@ -1,9 +1,23 @@
 @page "/"
 @attribute [Authorize]
 @inject IDashboardService DashboardService
+@inject ICurrentUser CurrentUser
 
-<PageTitle>Dashboard · BusinessPortal</PageTitle>
-<PageHeader Eyebrow="Overview" Title="Good work starts with a clear view." Description="A live snapshot of delivery, time, and the decisions that need attention." />
+<PageTitle>Dashboard · Vela</PageTitle>
+<PageHeader Eyebrow="Overview" Title="@greeting" Description="A live snapshot of delivery, time, and the decisions that need attention.">
+    <Actions>
+        <section class="panel workflow-card workflow-card-compact">
+            <span class="workflow-icon"><PortalIcon Name="shield" /></span>
+            <div>
+                <p class="eyebrow">Workflow focus</p>
+                <h2>Keep approvals moving</h2>
+                <p>Review submitted time while the context is fresh.</p>
+            </div>
+            <AuthorizeView Roles="@PortalRoles.Management"><a href="approvals" class="btn btn-primary btn-sm">Open queue</a></AuthorizeView>
+            <AuthorizeView Roles="@PortalRoles.Employee"><a href="my-time" class="btn btn-primary btn-sm">Record time</a></AuthorizeView>
+        </section>
+    </Actions>
+</PageHeader>
 
 @if (error is not null)
 {
@@ -16,36 +30,45 @@ else if (model is null)
 else
 {
     <div class="metrics">
-        <div class="metric-card"><span>Active clients</span><strong>@model.ActiveClients</strong></div>
-        <div class="metric-card"><span>Active projects</span><strong>@model.ActiveProjects</strong></div>
-        <div class="metric-card"><span>Hours this month</span><strong>@model.MonthHours.ToString("0.##")</strong></div>
-        <div class="metric-card"><span>Awaiting approval</span><strong>@model.AwaitingApproval</strong></div>
+        <div class="metric-card"><span class="metric-icon metric-icon-green"><PortalIcon Name="users" /></span><div><span class="metric-label">Active clients</span><strong>@model.ActiveClients</strong><small>Current relationships</small></div></div>
+        <div class="metric-card"><span class="metric-icon metric-icon-blue"><PortalIcon Name="briefcase" /></span><div><span class="metric-label">Active projects</span><strong>@model.ActiveProjects</strong><small>In delivery</small></div></div>
+        <div class="metric-card"><span class="metric-icon metric-icon-amber"><PortalIcon Name="clock" /></span><div><span class="metric-label">Hours this month</span><strong>@model.MonthHours.ToString("0.##")</strong><small>Recorded by the team</small></div></div>
+        <div class="metric-card"><span class="metric-icon metric-icon-violet"><PortalIcon Name="inbox" /></span><div><span class="metric-label">Awaiting approval</span><strong>@model.AwaitingApproval</strong><small>Items to review</small></div></div>
     </div>
     <div class="dashboard-grid">
-        <section class="panel">
-            <h2>Hours by project</h2>
-            <p class="muted">Current month across the organization</p>
+        <section class="panel hours-panel">
+            <div class="panel-head"><div><h2>Hours by project</h2><p>@CurrentMonthLabel across the organization</p></div><span class="panel-badge">Live</span></div>
             @if (model.HoursByProject.Count == 0)
             {
-                <EmptyState Title="No hours recorded this month" Description="Project activity will appear here as time is entered." />
+                <EmptyState Title="@NoHoursTitle" Description="Project activity will appear here as time is entered." />
             }
             else
             {
-                var max = model.HoursByProject.Max(x => x.Value);
-                <div class="bar-list">
+                <div class="hours-overview">
+                    <div class="hours-total-card">
+                        <span class="hours-total-icon"><PortalIcon Name="clock" /></span>
+                        <div><span>Tracked this month</span><strong>@model.MonthHours.ToString("0.#")h</strong><small>@ProjectCountLabel</small></div>
+                    </div>
+                    <div class="hours-project-list">
                     @foreach (var item in model.HoursByProject)
                     {
-                        <div class="bar-row">
-                            <span>@item.Label</span>
-                            <div class="bar-track"><div class="bar-fill" style="width: @((item.Value / max * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture))%"></div></div>
-                            <strong>@item.Value.ToString("0.#")h</strong>
+                        <div class="project-hours-card">
+                            <div class="project-hours-copy"><strong>@item.Label</strong><small>@Share(item.Value)% of tracked time</small></div>
+                            <strong class="project-hours-value">@item.Value.ToString("0.#")h</strong>
+                            <div class="bar-track"><div class="bar-fill" style="width: @Share(item.Value)%"></div></div>
                         </div>
                     }
+                    </div>
+                </div>
+                <div class="hours-panel-foot">
+                    <span>Based on time recorded during @CurrentMonthLabel.</span>
+                    <AuthorizeView Roles="@PortalRoles.Management"><a href="reports" class="text-link">Open report</a></AuthorizeView>
+                    <AuthorizeView Roles="@PortalRoles.Employee"><a href="my-time" class="text-link">View my time</a></AuthorizeView>
                 </div>
             }
         </section>
-        <section class="panel">
-            <h2>Recent activity</h2>
+        <section class="panel activity-panel">
+            <div class="panel-head"><div><h2>Recent activity</h2><p>Latest changes across your workspace</p></div></div>
             @if (model.RecentActivity.Count == 0)
             {
                 <EmptyState Title="No recent activity" Description="Important changes will be recorded here." />
@@ -53,15 +76,18 @@ else
             else
             {
                 <ul class="activity-list">
-                    @foreach (var item in model.RecentActivity)
+                    @foreach (var item in model.RecentActivity.Take(4))
                     {
-                        <li><strong>@item.Summary</strong><small>@item.UserName · @item.OccurredAtUtc.ToLocalTime().ToString("MMM d, HH:mm")</small></li>
+                        <li>
+                            <UserAvatar Name="@item.UserName" ImageUrl="@item.UserAvatarUrl" ColorKey="@item.UserId" Size="sm" />
+                            <span><strong>@item.Summary</strong><small>@item.UserName · @item.OccurredAtUtc.ToLocalTime().ToString("MMM d, HH:mm")</small></span>
+                        </li>
                     }
                 </ul>
             }
         </section>
-        <section class="panel">
-            <h2>Upcoming work</h2>
+        <section class="panel dashboard-wide">
+            <div class="panel-head"><div><h2>Upcoming work</h2><p>Deadlines that need attention next</p></div><a href="work-items" class="text-link">View all</a></div>
             @if (model.UpcomingWork.Count == 0)
             {
                 <EmptyState Title="No upcoming deadlines" Description="Open work with future due dates will appear here." />
@@ -72,18 +98,15 @@ else
                     <QuickGrid Items="@model.UpcomingWork.AsQueryable()" Class="quick-grid">
                         <PropertyColumn Property="x => x.Title" Title="Work item" />
                         <PropertyColumn Property="x => x.ProjectName" Title="Project" />
-                        <TemplateColumn Title="Priority"><StatusPill Value="@context.Priority" /></TemplateColumn>
-                        <PropertyColumn Property="x => x.DueDate" Title="Due" Format="yyyy-MM-dd" />
+                        <TemplateColumn Title="Owner">
+                            @if (context.AssignedToName is null) { <span class="muted">Unassigned</span> }
+                            else { <PersonCell Name="@context.AssignedToName" ImageUrl="@context.AssignedToAvatarUrl" ColorKey="@context.AssignedToUserId" Emphasized="false" /> }
+                        </TemplateColumn>
+                        <TemplateColumn Title="Priority" Class="cell-status"><StatusPill Value="@context.Priority" /></TemplateColumn>
+                        <PropertyColumn Property="x => x.DueDate" Title="Due" Format="yyyy-MM-dd" Class="cell-date" />
                     </QuickGrid>
                 </div>
             }
-        </section>
-        <section class="panel">
-            <p class="eyebrow">Workflow focus</p>
-            <h2>Keep approvals moving</h2>
-            <p class="muted">Review submitted time while the context is fresh. Concurrent decisions are protected by optimistic locking.</p>
-            <AuthorizeView Roles="@PortalRoles.Management"><a href="approvals" class="btn btn-primary">Open approval queue</a></AuthorizeView>
-            <AuthorizeView Roles="@PortalRoles.Employee"><a href="my-time" class="btn btn-primary">Record my time</a></AuthorizeView>
         </section>
     </div>
 }
@@ -91,10 +114,22 @@ else
 @code {
     private DashboardModel? model;
     private string? error;
+    private string greeting = "Hello.";
+    private string CurrentMonthLabel => DateTime.UtcNow.ToString("MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+    private string NoHoursTitle => $"No hours recorded in {CurrentMonthLabel}";
+    private string ProjectCountLabel => model?.HoursByProject.Count == 1 ? "1 project represented" : $"{model?.HoursByProject.Count ?? 0} projects represented";
+    private string Share(decimal value) => ((model?.MonthHours ?? 0) <= 0 ? 0 : value / model!.MonthHours * 100).ToString("0", CultureInfo.InvariantCulture);
 
     protected override async Task OnInitializedAsync()
     {
-        try { model = await DashboardService.GetAsync(); }
+        try
+        {
+            var dashboardTask = DashboardService.GetAsync();
+            var userTask = CurrentUser.GetAsync();
+            await Task.WhenAll(dashboardTask, userTask);
+            model = await dashboardTask;
+            greeting = $"Hello, {(await userTask).DisplayName}.";
+        }
         catch (Exception ex) { error = ex is ForbiddenException ? ex.Message : "Dashboard data could not be loaded."; }
     }
 }

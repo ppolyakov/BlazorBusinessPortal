@@ -1,5 +1,11 @@
-<span class="status-pill status-@Value">@Value</span>
+<span class="status-pill status-@Value">@DisplayValue</span>
 
 @code {
     [Parameter, EditorRequired] public object Value { get; set; } = "";
+    private string DisplayValue => Value.ToString() switch
+    {
+        "InProgress" => "In progress",
+        "OnHold" => "On hold",
+        _ => Value.ToString() ?? ""
+    };
 }

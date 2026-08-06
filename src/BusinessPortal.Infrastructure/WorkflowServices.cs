@@ -14,7 +14,8 @@ internal sealed class TimeEntryService(IDbContextFactory<ApplicationDbContext> f
         from workItem in workItems.DefaultIfEmpty()
         join owner in db.Users.AsNoTracking() on entry.UserId equals owner.Id
         select new TimeEntryListItem(entry.Id, project.Id, project.Name, entry.WorkItemId, workItem == null ? null : workItem.Title,
-            entry.UserId, owner.DisplayName, entry.WorkDate, entry.Hours, entry.Description, entry.Status, entry.ReviewComment, entry.Version);
+            entry.UserId, owner.DisplayName, entry.WorkDate, entry.Hours, entry.Description, entry.Status, entry.ReviewComment, entry.Version,
+            owner.AvatarImage == null ? null : "/avatars/" + owner.Id);
 
     public async Task<PageResult<TimeEntryListItem>> MineAsync(PageRequest request, DateOnly? from = null, DateOnly? through = null, TimeEntryStatus? status = null, CancellationToken cancellationToken = default)
     {
@@ -94,8 +95,24 @@ internal sealed class TimeEntryService(IDbContextFactory<ApplicationDbContext> f
         await using var db = await Factory.CreateDbContextAsync(cancellationToken);
         var entity = await db.TimeEntries.SingleOrDefaultAsync(x => x.OrganizationId == user.OrganizationId && x.UserId == user.UserId && x.Id == id, cancellationToken)
             ?? throw new ResourceNotFoundException("Time entry was not found.");
+        var project = await db.Projects.AsNoTracking()
+            .Where(x => x.OrganizationId == user.OrganizationId && x.Id == entity.ProjectId)
+            .Select(x => new { x.Code, x.Name })
+            .SingleAsync(cancellationToken);
         entity.Submit(DateTime.UtcNow);
         AddAudit(db, user, "TimeEntrySubmitted", nameof(TimeEntry), id, $"Submitted {entity.Hours:0.##} hours for review.");
+        await NotificationWriter.ToRolesAsync(
+            db,
+            user.OrganizationId,
+            [PortalRoles.Administrator, PortalRoles.Manager],
+            user.UserId,
+            NotificationType.TimeEntrySubmitted,
+            "Time entry awaiting approval",
+            $"{user.DisplayName} submitted {entity.Hours:0.##}h for {project.Code} · {project.Name} on {entity.WorkDate:MMM d}.",
+            "/approvals",
+            nameof(TimeEntry),
+            entity.Id,
+            cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -135,10 +152,27 @@ internal sealed class TimeEntryService(IDbContextFactory<ApplicationDbContext> f
         await using var db = await Factory.CreateDbContextAsync(cancellationToken);
         var entity = await db.TimeEntries.SingleOrDefaultAsync(x => x.OrganizationId == user.OrganizationId && x.Id == id, cancellationToken)
             ?? throw new ResourceNotFoundException("Time entry was not found.");
+        var projectName = await db.Projects.AsNoTracking()
+            .Where(x => x.OrganizationId == user.OrganizationId && x.Id == entity.ProjectId)
+            .Select(x => x.Name)
+            .SingleAsync(cancellationToken);
         db.Entry(entity).Property(x => x.Version).OriginalValue = version;
         if (approve) entity.Approve(user.UserId, DateTime.UtcNow);
         else entity.Reject(user.UserId, comment ?? "", DateTime.UtcNow);
         AddAudit(db, user, approve ? "TimeEntryApproved" : "TimeEntryRejected", nameof(TimeEntry), id, approve ? "Time entry approved." : "Time entry rejected with reviewer feedback.");
+        NotificationWriter.ToUser(
+            db,
+            user.OrganizationId,
+            entity.UserId,
+            user.UserId,
+            approve ? NotificationType.TimeEntryApproved : NotificationType.TimeEntryRejected,
+            approve ? "Time entry approved" : "Time entry needs changes",
+            approve
+                ? $"{user.DisplayName} approved your {entity.Hours:0.##}h entry for {projectName}."
+                : $"{user.DisplayName} returned your {entity.Hours:0.##}h entry for {projectName}. Review feedback is available.",
+            "/my-time",
+            nameof(TimeEntry),
+            entity.Id);
         try
         {
             await db.SaveChangesAsync(cancellationToken);

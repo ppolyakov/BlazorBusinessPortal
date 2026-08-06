@@ -1,6 +1,6 @@
-# BusinessPortal
+# Vela
 
-BusinessPortal is a production-style Blazor business management portal for small delivery teams. It brings clients, projects, work items, time tracking, approvals, reporting, Excel exports, and audit history into one organization-isolated workspace.
+Vela is a production-style Blazor operations workspace for small delivery teams. It brings clients, projects, work items, time tracking, approvals, reporting, Excel exports, and audit history into one organization-isolated workspace.
 
 > This is an independent portfolio project. It does not represent a real client deployment or production usage claim.
 

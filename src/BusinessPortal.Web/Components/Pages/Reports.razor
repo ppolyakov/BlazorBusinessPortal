@@ -5,22 +5,22 @@
 @inject IProjectService ProjectService
 @inject IUserDirectory UserDirectory
 @inject IJSRuntime Js
+@inject ToastService Toasts
 
-<PageTitle>Reports · BusinessPortal</PageTitle>
+<PageTitle>Reports · Vela</PageTitle>
 <PageHeader Eyebrow="Analysis" Title="Time report" Description="Explore approved and in-flight hours with server-side aggregation, paging, and a safe Excel export.">
     <Actions><button class="btn btn-primary" disabled="@exporting" @onclick="Export">@(exporting ? "Preparing…" : "Export Excel")</button></Actions>
 </PageHeader>
 
-@if (message is not null) { <div class="alert alert-success" role="status">@message</div> }
 @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
 
-<section class="panel">
+<section class="panel report-filter-panel">
     <div class="filter-bar">
-        <div class="field"><label for="report-from">From</label><InputDate id="report-from" class="form-control" @bind-Value="filter.From" /></div>
-        <div class="field"><label for="report-to">Through</label><InputDate id="report-to" class="form-control" @bind-Value="filter.To" /></div>
-        <div class="field"><label for="report-client">Client</label><InputSelect id="report-client" class="form-select" @bind-Value="filter.ClientId"><option value="">All clients</option>@foreach (var item in clients) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
-        <div class="field"><label for="report-project">Project</label><InputSelect id="report-project" class="form-select" @bind-Value="filter.ProjectId"><option value="">All projects</option>@foreach (var item in projects) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
-        <div class="field"><label for="report-user">Employee</label><InputSelect id="report-user" class="form-select" @bind-Value="filter.UserId"><option value="">All employees</option>@foreach (var item in users) { <option value="@item.Id">@item.Name</option> }</InputSelect></div>
+        <div class="field"><label for="report-from">From</label><PortalDatePicker TValue="DateOnly" Id="report-from" @bind-Value="filter.From" /></div>
+        <div class="field"><label for="report-to">Through</label><PortalDatePicker TValue="DateOnly" Id="report-to" @bind-Value="filter.To" /></div>
+        <div class="field"><label for="report-client">Client</label><PortalSelect TValue="NullableGuid" Id="report-client" MenuLabel="Report client" Searchable="true" Options="ClientOptions" @bind-Value="filter.ClientId" /></div>
+        <div class="field"><label for="report-project">Project</label><PortalSelect TValue="NullableGuid" Id="report-project" MenuLabel="Report project" Searchable="true" Options="ProjectOptions" @bind-Value="filter.ProjectId" /></div>
+        <div class="field"><label for="report-user">Employee</label><PortalSelect TValue="string" Id="report-user" MenuLabel="Report employee" Searchable="true" Options="UserOptions" @bind-Value="filter.UserId" /></div>
         <button class="btn btn-quiet" @onclick="Apply">Apply filters</button>
     </div>
 </section>
@@ -51,22 +51,22 @@ else
         </section>
     </div>
     <section class="panel" style="margin-top:1rem">
-        <h2>Detailed entries</h2>
+        <div class="panel-head report-detail-head"><div><h2>Detailed entries</h2><p>Individual time records matching the active report filters.</p></div></div>
         @if (result.Details.Items.Count == 0) { <EmptyState Title="No detail rows" Description="There are no entries in the selected report scope." /> }
         else
         {
             <div class="table-shell">
                 <QuickGrid Items="@result.Details.Items.AsQueryable()" Class="quick-grid">
-                    <PropertyColumn Property="x => x.WorkDate" Title="Date" Format="yyyy-MM-dd" />
+                    <PropertyColumn Property="x => x.WorkDate" Title="Date" Format="yyyy-MM-dd" Class="cell-date" />
                     <PropertyColumn Property="x => x.ClientName" Title="Client" />
                     <PropertyColumn Property="x => x.ProjectName" Title="Project" />
-                    <PropertyColumn Property="x => x.UserName" Title="Employee" />
-                    <PropertyColumn Property="x => x.Hours" Title="Hours" Format="0.##" />
+                    <TemplateColumn Title="Employee"><PersonCell Name="@context.UserName" ImageUrl="@context.UserAvatarUrl" ColorKey="@context.UserId" Emphasized="false" /></TemplateColumn>
+                    <PropertyColumn Property="x => x.Hours" Title="Hours" Format="0.##" Class="cell-number" />
                     <PropertyColumn Property="x => x.Description" Title="Description" />
-                    <TemplateColumn Title="Status"><StatusPill Value="@context.Status" /></TemplateColumn>
+                    <TemplateColumn Title="Status" Class="cell-status"><StatusPill Value="@context.Status" /></TemplateColumn>
                 </QuickGrid>
             </div>
-            <Pager Page="@result.Details.Page" TotalPages="@result.Details.TotalPages" TotalCount="@result.Details.TotalCount" Changed="ChangePage" />
+            <Pager Page="@result.Details.Page" TotalPages="@result.Details.TotalPages" TotalCount="@result.Details.TotalCount" PageSize="@filter.PageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
         }
     </section>
 }
@@ -78,8 +78,19 @@ else
     private IReadOnlyList<LookupItem<Guid>> projects = [];
     private IReadOnlyList<LookupItem<string>> users = [];
     private string? error;
-    private string? message;
     private bool exporting;
+    private IReadOnlyList<PortalSelectOption<Guid?>> ClientOptions => clients
+        .Select(item => new PortalSelectOption<Guid?>((Guid?)item.Id, item.Name, item.ContactName))
+        .Prepend(new(null, "All clients"))
+        .ToArray();
+    private IReadOnlyList<PortalSelectOption<Guid?>> ProjectOptions => projects
+        .Select(item => new PortalSelectOption<Guid?>((Guid?)item.Id, item.Name))
+        .Prepend(new(null, "All projects"))
+        .ToArray();
+    private IReadOnlyList<PortalSelectOption<string>> UserOptions => users
+        .Select(item => new PortalSelectOption<string>(item.Id, item.Name))
+        .Prepend(new(null!, "All employees"))
+        .ToArray();
 
     protected override async Task OnInitializedAsync()
     {
@@ -91,6 +102,7 @@ else
     private async Task Load() { try { error = null; result = await ReportService.GetAsync(filter); } catch (Exception ex) { error = ex.Message; } }
     private async Task Apply() { filter.Page = 1; await Load(); }
     private async Task ChangePage(int value) { filter.Page = value; await Load(); }
+    private async Task ChangePageSize(int value) { filter.PageSize = value; filter.Page = 1; await Load(); }
     private static string Percent(decimal value, decimal max) => (max <= 0 ? 0 : value / max * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture);
     private async Task Export()
     {
@@ -99,7 +111,7 @@ else
         {
             var file = await ReportService.ExportAsync(filter);
             await Js.InvokeVoidAsync("businessPortal.download", file.FileName, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", file.Content);
-            message = "Excel report generated.";
+            Toasts.Success("Excel report generated", $"{file.FileName} is ready in your downloads.");
         }
         catch (Exception ex) { error = ex.Message; }
         finally { exporting = false; }

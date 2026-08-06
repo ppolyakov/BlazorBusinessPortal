@@ -1,0 +1,25 @@
+@if (Visible)
+{
+    <div class="portal-modal-layer" role="presentation" @onclick="CloseAsync">
+        <section class="portal-modal-card" role="dialog" aria-modal="true" aria-labelledby="@titleId" @onclick:stopPropagation>
+            <header class="portal-modal-header">
+                <h2 id="@titleId">@Title</h2>
+                <button type="button" class="portal-modal-close" aria-label="Close dialog" @onclick="CloseAsync">&times;</button>
+            </header>
+            <div class="portal-modal-body">
+                @ChildContent
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private readonly string titleId = $"portal-modal-title-{Guid.NewGuid():N}";
+
+    [Parameter] public bool Visible { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private Task CloseAsync() => Closed.InvokeAsync();
+}

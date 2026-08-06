@@ -13,6 +13,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -28,6 +29,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         builder.Entity<ApplicationUser>(entity =>
         {
             entity.Property(x => x.DisplayName).HasMaxLength(120);
+            entity.Property(x => x.AvatarContentType).HasMaxLength(40);
             entity.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.OrganizationId, x.IsActive });
         });
@@ -93,6 +95,20 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.OrganizationId, x.OccurredAtUtc });
             entity.HasIndex(x => new { x.OrganizationId, x.EntityType, x.Action });
+        });
+
+        builder.Entity<Notification>(entity =>
+        {
+            entity.Property(x => x.Type).HasConversion<string>().HasMaxLength(40);
+            entity.Property(x => x.Title).HasMaxLength(160);
+            entity.Property(x => x.Message).HasMaxLength(500);
+            entity.Property(x => x.TargetUrl).HasMaxLength(300);
+            entity.Property(x => x.EntityType).HasMaxLength(80);
+            entity.Property(x => x.EntityId).HasMaxLength(80);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RecipientUserId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ActorUserId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(x => new { x.OrganizationId, x.RecipientUserId, x.ReadAtUtc, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.OrganizationId, x.EntityType, x.EntityId });
         });
     }
 }

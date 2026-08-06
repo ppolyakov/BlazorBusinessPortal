@@ -2,6 +2,7 @@ using BusinessPortal.Application;
 using BusinessPortal.Domain;
 using BusinessPortal.Infrastructure;
 using DocumentFormat.OpenXml.Packaging;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace BusinessPortal.IntegrationTests;
@@ -23,6 +24,47 @@ public sealed class WorkflowAndExportTests(PostgreSqlFixture fixture)
         await using var db = fixture.CreateContext();
         Assert.Equal(TimeEntryStatus.Approved, (await db.TimeEntries.FindAsync(seed.EntryId))!.Status);
         Assert.True(await db.AuditEntries.AnyAsync(x => x.EntityId == seed.EntryId.ToString() && x.Action == "TimeEntryApproved"));
+        Assert.True(await db.Notifications.AnyAsync(x => x.RecipientUserId == seed.ManagerInfo.UserId && x.Type == NotificationType.TimeEntrySubmitted));
+        Assert.True(await db.Notifications.AnyAsync(x => x.RecipientUserId == seed.EmployeeInfo.UserId && x.Type == NotificationType.TimeEntryApproved));
+    }
+
+    [Fact]
+    public async Task Notifications_are_user_scoped_and_can_be_marked_read()
+    {
+        var seed = await SeedWorkflowAsync();
+        var employeeService = new TimeEntryService(fixture.CreateFactory(), new StubCurrentUser(seed.EmployeeInfo));
+        await employeeService.SubmitAsync(seed.EntryId);
+
+        var managerNotifications = new NotificationService(fixture.CreateFactory(), new StubCurrentUser(seed.ManagerInfo));
+        var managerFeed = await managerNotifications.GetAsync();
+        var submitted = Assert.Single(managerFeed.Items, x => x.Type == NotificationType.TimeEntrySubmitted);
+        Assert.Equal(1, managerFeed.UnreadCount);
+        Assert.Equal("/approvals", await managerNotifications.MarkReadAsync(submitted.Id));
+        Assert.Equal(0, (await managerNotifications.GetAsync()).UnreadCount);
+
+        var employeeNotifications = new NotificationService(fixture.CreateFactory(), new StubCurrentUser(seed.EmployeeInfo));
+        await Assert.ThrowsAsync<ResourceNotFoundException>(() => employeeNotifications.MarkReadAsync(submitted.Id));
+    }
+
+    [Fact]
+    public async Task Completing_project_notifies_other_active_organization_members()
+    {
+        var seed = await SeedWorkflowAsync();
+        var projects = new ProjectService(fixture.CreateFactory(), new StubCurrentUser(seed.ManagerInfo));
+        var input = await projects.GetAsync(seed.ProjectId);
+        input.Status = ProjectStatus.Completed;
+        await projects.SaveAsync(seed.ProjectId, input);
+
+        await using var db = fixture.CreateContext();
+        Assert.True(await db.Notifications.AnyAsync(x =>
+            x.OrganizationId == seed.EmployeeInfo.OrganizationId
+            && x.RecipientUserId == seed.EmployeeInfo.UserId
+            && x.Type == NotificationType.ProjectCompleted
+            && x.EntityId == seed.ProjectId.ToString()));
+        Assert.False(await db.Notifications.AnyAsync(x =>
+            x.RecipientUserId == seed.ManagerInfo.UserId
+            && x.Type == NotificationType.ProjectCompleted
+            && x.EntityId == seed.ProjectId.ToString()));
     }
 
     [Fact]
@@ -71,12 +113,20 @@ public sealed class WorkflowAndExportTests(PostgreSqlFixture fixture)
         var project = new Project { OrganizationId = org.Id, ClientId = client.Id, Name = "Project", Code = $"P-{suffix[..6]}", Status = ProjectStatus.Active, StartDate = new DateOnly(2026, 1, 1) };
         var entry = new TimeEntry { OrganizationId = org.Id, ProjectId = project.Id, UserId = employee.Id, WorkDate = new DateOnly(2026, 1, 12), Hours = 8, Description = "Implemented tenant-safe workflow." };
         db.AddRange(org, employee, manager, client, project, entry);
+        var managerRole = await db.Roles.SingleOrDefaultAsync(x => x.NormalizedName == "MANAGER");
+        if (managerRole is null)
+        {
+            managerRole = new IdentityRole(PortalRoles.Manager) { Id = $"role-manager-{suffix}", NormalizedName = PortalRoles.Manager.ToUpperInvariant() };
+            db.Roles.Add(managerRole);
+        }
+        db.UserRoles.Add(new IdentityUserRole<string> { UserId = manager.Id, RoleId = managerRole.Id });
         await db.SaveChangesAsync();
         return new(
             entry.Id,
+            project.Id,
             new(employee.Id, org.Id, org.Name, employee.DisplayName, new HashSet<string> { PortalRoles.Employee }),
             new(manager.Id, org.Id, org.Name, manager.DisplayName, new HashSet<string> { PortalRoles.Manager }));
     }
 
-    private sealed record WorkflowSeed(Guid EntryId, CurrentUserInfo EmployeeInfo, CurrentUserInfo ManagerInfo);
+    private sealed record WorkflowSeed(Guid EntryId, Guid ProjectId, CurrentUserInfo EmployeeInfo, CurrentUserInfo ManagerInfo);
 }

@@ -1,0 +1,148 @@
+@typeparam TValue
+@inherits InputBase<TValue>
+@inject IJSRuntime Js
+
+<div class="portal-picker portal-date-picker @(isOpen ? "is-open" : null)" @onkeydown="HandleKeyDown">
+    <button @ref="trigger"
+            @attributes="AdditionalAttributes"
+            id="@Id"
+            type="button"
+            class="portal-picker-trigger @CssClass"
+            aria-haspopup="dialog"
+            aria-expanded="@isOpen"
+            aria-controls="@menuId"
+            @onclick="Toggle">
+        <span class="portal-picker-value @(SelectedDate.HasValue ? null : "is-placeholder")">@DisplayText</span>
+        <PortalIcon Name="calendar" Class="portal-picker-calendar-icon" />
+    </button>
+
+    @if (isOpen)
+    {
+        <button type="button" class="portal-picker-dismiss" tabindex="-1" aria-label="Close calendar" @onclick="Close"></button>
+        <div @ref="menu" id="@menuId" class="portal-picker-menu portal-calendar" role="dialog" aria-modal="false" aria-label="Choose a date">
+            <div class="portal-calendar-head">
+                <button type="button" class="portal-calendar-nav" aria-label="Previous month" @onclick="PreviousMonth"><PortalIcon Name="chevron-left" /></button>
+                <strong aria-live="polite">@viewMonth.ToString("MMMM yyyy", CultureInfo.InvariantCulture)</strong>
+                <button type="button" class="portal-calendar-nav" aria-label="Next month" @onclick="NextMonth"><PortalIcon Name="chevron-right" /></button>
+            </div>
+            <div class="portal-calendar-weekdays" aria-hidden="true">
+                @foreach (var dayName in Weekdays) { <span>@dayName</span> }
+            </div>
+            <div class="portal-calendar-grid">
+                @foreach (var day in CalendarDays)
+                {
+                    <button type="button"
+                            class="portal-calendar-day @DayClass(day)"
+                            aria-label="@day.Date.ToString("dddd, MMMM d, yyyy", CultureInfo.InvariantCulture)"
+                            aria-pressed="@day.IsSelected"
+                            @onclick="() => SelectDate(day.Date)">@day.Date.Day</button>
+                }
+            </div>
+            <div class="portal-calendar-footer">
+                <button type="button" class="portal-calendar-text-action" @onclick="SelectToday">Today</button>
+                @if (IsNullable)
+                {
+                    <button type="button" class="portal-calendar-text-action muted" @onclick="Clear">Clear</button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Select date";
+
+    private static readonly string[] Weekdays = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+    private readonly string menuId = $"calendar-{Guid.NewGuid():N}";
+    private ElementReference trigger;
+    private ElementReference menu;
+    private DateOnly viewMonth = StartOfMonth(DateOnly.FromDateTime(DateTime.Today));
+    private bool isOpen;
+    private bool positionPending;
+
+    private DateOnly? SelectedDate => Value is DateOnly date ? date : null;
+    private string DisplayText => SelectedDate?.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) ?? Placeholder;
+    private bool IsNullable => Nullable.GetUnderlyingType(typeof(TValue)) == typeof(DateOnly);
+    private IReadOnlyList<CalendarDay> CalendarDays
+    {
+        get
+        {
+            var offset = ((int)viewMonth.DayOfWeek + 6) % 7;
+            var first = viewMonth.AddDays(-offset);
+            return Enumerable.Range(0, 42)
+                .Select(i => first.AddDays(i))
+                .Select(date => new CalendarDay(
+                    date,
+                    date.Month == viewMonth.Month,
+                    date == SelectedDate,
+                    date == DateOnly.FromDateTime(DateTime.Today)))
+                .ToArray();
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+        if (!isOpen && SelectedDate.HasValue) viewMonth = StartOfMonth(SelectedDate.Value);
+    }
+
+    protected override bool TryParseValueFromString(string? value, out TValue result, out string validationErrorMessage)
+    {
+        result = default!;
+        validationErrorMessage = "The selected date is not valid.";
+        return false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!positionPending) return;
+        positionPending = false;
+        await Js.InvokeVoidAsync("businessPortal.positionPicker", trigger, menu, 308);
+    }
+
+    private void Toggle()
+    {
+        isOpen = !isOpen;
+        if (isOpen)
+        {
+            viewMonth = StartOfMonth(SelectedDate ?? DateOnly.FromDateTime(DateTime.Today));
+            positionPending = true;
+        }
+    }
+
+    private void Close() => isOpen = false;
+    private void PreviousMonth() => viewMonth = viewMonth.AddMonths(-1);
+    private void NextMonth() => viewMonth = viewMonth.AddMonths(1);
+    private void SelectToday() => SelectDate(DateOnly.FromDateTime(DateTime.Today));
+
+    private void SelectDate(DateOnly date)
+    {
+        if (typeof(TValue) == typeof(DateOnly)) CurrentValue = (TValue)(object)date;
+        else if (IsNullable) CurrentValue = (TValue)(object)(DateOnly?)date;
+        else throw new InvalidOperationException($"{nameof(PortalDatePicker<TValue>)} supports DateOnly and DateOnly? values only.");
+        Close();
+    }
+
+    private void Clear()
+    {
+        CurrentValue = default!;
+        Close();
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") Close();
+        else if (!isOpen && args.Key == "ArrowDown") Toggle();
+    }
+
+    private string DayClass(CalendarDay day) => string.Join(' ', new[]
+    {
+        day.InCurrentMonth ? null : "is-outside",
+        day.IsToday ? "is-today" : null,
+        day.IsSelected ? "is-selected" : null
+    }.Where(x => x is not null));
+
+    private static DateOnly StartOfMonth(DateOnly date) => new(date.Year, date.Month, 1);
+    private sealed record CalendarDay(DateOnly Date, bool InCurrentMonth, bool IsSelected, bool IsToday);
+}

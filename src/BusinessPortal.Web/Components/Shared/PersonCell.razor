@@ -1,0 +1,16 @@
+<div class="person-cell">
+    <UserAvatar Name="@Name" ImageUrl="@ImageUrl" ColorKey="@ColorKey" Size="@Size" />
+    <span class="person-copy">
+        @if (Emphasized) { <strong>@Name</strong> } else { <span>@Name</span> }
+        @if (!string.IsNullOrWhiteSpace(Secondary)) { <small>@Secondary</small> }
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "User";
+    [Parameter] public string? ImageUrl { get; set; }
+    [Parameter] public string? ColorKey { get; set; }
+    [Parameter] public string? Secondary { get; set; }
+    [Parameter] public string Size { get; set; } = "sm";
+    [Parameter] public bool Emphasized { get; set; } = true;
+}
