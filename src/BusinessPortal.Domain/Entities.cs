@@ -13,9 +13,11 @@ public sealed class Client
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid OrganizationId { get; set; }
+    public int Number { get; set; }
     public required string Name { get; set; }
     public string? ContactName { get; set; }
     public string? ContactEmail { get; set; }
+    public string? ContactPhone { get; set; }
     public ClientStatus Status { get; set; } = ClientStatus.Active;
     public string? Notes { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -26,6 +28,7 @@ public sealed class Project
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid OrganizationId { get; set; }
+    public int Number { get; set; }
     public Guid ClientId { get; set; }
     public required string Name { get; set; }
     public required string Code { get; set; }
@@ -52,6 +55,7 @@ public sealed class WorkItem
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid OrganizationId { get; set; }
+    public int Number { get; set; }
     public Guid ProjectId { get; set; }
     public required string Title { get; set; }
     public string? Description { get; set; }
@@ -64,10 +68,25 @@ public sealed class WorkItem
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+public sealed class WorkItemActivity
+{
+    public long Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkItemId { get; set; }
+    public required string ActorUserId { get; set; }
+    public string? TargetUserId { get; set; }
+    public WorkItemActivityType Type { get; set; }
+    public WorkItemStatus? FromStatus { get; set; }
+    public WorkItemStatus? ToStatus { get; set; }
+    public string? Comment { get; set; }
+    public DateTime OccurredAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class TimeEntry
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid OrganizationId { get; set; }
+    public int Number { get; set; }
     public Guid ProjectId { get; set; }
     public Guid? WorkItemId { get; set; }
     public required string UserId { get; set; }
@@ -76,6 +95,7 @@ public sealed class TimeEntry
     public required string Description { get; set; }
     public TimeEntryStatus Status { get; set; } = TimeEntryStatus.Draft;
     public DateTime? SubmittedAtUtc { get; set; }
+    public string? SubmittedToUserId { get; set; }
     public DateTime? ReviewedAtUtc { get; set; }
     public string? ReviewedByUserId { get; set; }
     public string? ReviewComment { get; set; }
@@ -114,30 +134,31 @@ public sealed class TimeEntry
         UpdatedAtUtc = nowUtc;
     }
 
-    public void Reject(string reviewerUserId, string comment, DateTime nowUtc)
+    public void Return(string reviewerUserId, string comment, DateTime nowUtc)
     {
         EnsureReviewAllowed(reviewerUserId);
         if (string.IsNullOrWhiteSpace(comment))
         {
-            throw new DomainException("A rejection comment is required.");
+            throw new DomainException("A return comment is required.");
         }
 
-        Status = TimeEntryStatus.Rejected;
+        Status = TimeEntryStatus.Returned;
         ReviewedByUserId = reviewerUserId;
         ReviewedAtUtc = nowUtc;
         ReviewComment = comment.Trim();
         UpdatedAtUtc = nowUtc;
     }
 
-    public void ReopenRejected(DateTime nowUtc)
+    public void ReopenReturned(DateTime nowUtc)
     {
-        if (Status != TimeEntryStatus.Rejected)
+        if (Status != TimeEntryStatus.Returned)
         {
-            throw new DomainException("Only a rejected time entry can return to draft.");
+            throw new DomainException("Only a returned time entry can return to draft.");
         }
 
         Status = TimeEntryStatus.Draft;
         SubmittedAtUtc = null;
+        SubmittedToUserId = null;
         ReviewedAtUtc = null;
         ReviewedByUserId = null;
         UpdatedAtUtc = nowUtc;
@@ -155,6 +176,21 @@ public sealed class TimeEntry
             throw new DomainException("Users cannot review their own time entries.");
         }
     }
+}
+
+public sealed class TimeEntryActivity
+{
+    public long Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid TimeEntryId { get; set; }
+    public required string ActorUserId { get; set; }
+    public string? TargetUserId { get; set; }
+    public string? TargetLabel { get; set; }
+    public TimeEntryActivityType Type { get; set; }
+    public TimeEntryStatus? FromStatus { get; set; }
+    public TimeEntryStatus? ToStatus { get; set; }
+    public string? Comment { get; set; }
+    public DateTime OccurredAtUtc { get; set; } = DateTime.UtcNow;
 }
 
 public sealed class AuditEntry

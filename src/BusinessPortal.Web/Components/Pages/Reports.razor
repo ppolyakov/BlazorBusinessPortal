@@ -16,6 +16,7 @@
 
 <section class="panel report-filter-panel">
     <div class="filter-bar">
+        <div class="field"><label for="report-search">Search</label><input id="report-search" class="form-control" placeholder="TE-0001, project, or description" @bind="filter.Search" @bind:event="oninput" /></div>
         <div class="field"><label for="report-from">From</label><PortalDatePicker TValue="DateOnly" Id="report-from" @bind-Value="filter.From" /></div>
         <div class="field"><label for="report-to">Through</label><PortalDatePicker TValue="DateOnly" Id="report-to" @bind-Value="filter.To" /></div>
         <div class="field"><label for="report-client">Client</label><PortalSelect TValue="NullableGuid" Id="report-client" MenuLabel="Report client" Searchable="true" Options="ClientOptions" @bind-Value="filter.ClientId" /></div>
@@ -29,10 +30,10 @@
 else
 {
     <div class="metrics">
-        <div class="metric-card"><span>Total hours</span><strong>@result.TotalHours.ToString("0.##")</strong></div>
-        <div class="metric-card"><span>Detail rows</span><strong>@result.Details.TotalCount</strong></div>
-        <div class="metric-card"><span>Projects represented</span><strong>@result.Totals.Count</strong></div>
-        <div class="metric-card"><span>Period</span><strong style="font-size:1.05rem">@filter.From.ToString("MMM d") – @filter.To.ToString("MMM d")</strong></div>
+        <div class="metric-card"><span class="metric-icon metric-icon-amber"><PortalIcon Name="clock" /></span><div><span class="metric-label">Total hours</span><strong>@result.TotalHours.ToString("0.##")</strong><small>Across the selected scope</small></div></div>
+        <div class="metric-card"><span class="metric-icon metric-icon-blue"><PortalIcon Name="audit" /></span><div><span class="metric-label">Detail rows</span><strong>@result.Details.TotalCount</strong><small>Matching time entries</small></div></div>
+        <div class="metric-card"><span class="metric-icon metric-icon-green"><PortalIcon Name="briefcase" /></span><div><span class="metric-label">Projects represented</span><strong>@result.Totals.Count</strong><small>Included in this report</small></div></div>
+        <div class="metric-card"><span class="metric-icon metric-icon-violet"><PortalIcon Name="calendar" /></span><div><span class="metric-label">Period</span><strong class="metric-period">@filter.From.ToString("MMM d") – @filter.To.ToString("MMM d")</strong><small>Active date range</small></div></div>
     </div>
     <div class="dashboard-grid">
         <section class="panel">
@@ -57,13 +58,14 @@ else
         {
             <div class="table-shell">
                 <QuickGrid Items="@result.Details.Items.AsQueryable()" Class="quick-grid">
-                    <PropertyColumn Property="x => x.WorkDate" Title="Date" Format="yyyy-MM-dd" Class="cell-date" />
-                    <PropertyColumn Property="x => x.ClientName" Title="Client" />
-                    <PropertyColumn Property="x => x.ProjectName" Title="Project" />
-                    <TemplateColumn Title="Employee"><PersonCell Name="@context.UserName" ImageUrl="@context.UserAvatarUrl" ColorKey="@context.UserId" Emphasized="false" /></TemplateColumn>
-                    <PropertyColumn Property="x => x.Hours" Title="Hours" Format="0.##" Class="cell-number" />
-                    <PropertyColumn Property="x => x.Description" Title="Description" />
-                    <TemplateColumn Title="Status" Class="cell-status"><StatusPill Value="@context.Status" /></TemplateColumn>
+                    <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference">@context.Reference</TemplateColumn>
+                    <PropertyColumn Property="x => x.WorkDate" Title="Date" Format="yyyy-MM-dd" Sortable="true" Class="cell-date" />
+                    <PropertyColumn Property="x => x.ClientName" Title="Client" Sortable="true" />
+                    <TemplateColumn Title="Project" SortBy="@sortByProject"><strong>@context.ProjectReference</strong><div class="muted">@context.ProjectName</div></TemplateColumn>
+                    <TemplateColumn Title="Employee" SortBy="@sortByEmployee"><PersonCell Name="@context.UserName" ImageUrl="@context.UserAvatarUrl" ColorKey="@context.UserId" Emphasized="false" /></TemplateColumn>
+                    <PropertyColumn Property="x => x.Hours" Title="Hours" Format="0.##" Sortable="true" Class="cell-number" />
+                    <PropertyColumn Property="x => x.Description" Title="Description" Sortable="true" />
+                    <TemplateColumn Title="Status" SortBy="@sortByStatus" Class="cell-status"><StatusPill Value="@context.Status" /></TemplateColumn>
                 </QuickGrid>
             </div>
             <Pager Page="@result.Details.Page" TotalPages="@result.Details.TotalPages" TotalCount="@result.Details.TotalCount" PageSize="@filter.PageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
@@ -72,13 +74,17 @@ else
 }
 
 @code {
-    private ReportFilter filter = new(DateOnly.FromDateTime(DateTime.Today).AddMonths(-2), DateOnly.FromDateTime(DateTime.Today));
+    private ReportFilter filter = new(DateOnly.FromDateTime(DateTime.Today).AddMonths(-2), DateOnly.FromDateTime(DateTime.Today)) { Sort = "number" };
     private ReportModel? result;
     private IReadOnlyList<ClientListItem> clients = [];
     private IReadOnlyList<LookupItem<Guid>> projects = [];
     private IReadOnlyList<LookupItem<string>> users = [];
     private string? error;
     private bool exporting;
+    private static readonly GridSort<ReportRow> sortByNumber = GridSort<ReportRow>.ByAscending(x => x.TimeEntryNumber);
+    private static readonly GridSort<ReportRow> sortByEmployee = GridSort<ReportRow>.ByAscending(x => x.UserName);
+    private static readonly GridSort<ReportRow> sortByProject = GridSort<ReportRow>.ByAscending(x => x.ProjectName);
+    private static readonly GridSort<ReportRow> sortByStatus = GridSort<ReportRow>.ByAscending(x => x.Status);
     private IReadOnlyList<PortalSelectOption<Guid?>> ClientOptions => clients
         .Select(item => new PortalSelectOption<Guid?>((Guid?)item.Id, item.Name, item.ContactName))
         .Prepend(new(null, "All clients"))

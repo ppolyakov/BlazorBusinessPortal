@@ -1,0 +1,241 @@
+@inject ITimeEntryService TimeEntryService
+@inject ToastService Toasts
+
+<PortalModal Visible="Visible" Title="@(details is null ? "Time entry details" : $"{PublicReference.TimeEntry(details.Number)} · Time entry")" Closed="CloseAsync">
+    <HeaderActions>
+        @if (details is not null)
+        {
+            @if (details.CanEdit) { <button type="button" class="btn btn-quiet" @onclick="() => InvokeAction(EditRequested)">Edit</button> }
+            @if (details.CanSubmit) { <button type="button" class="btn btn-primary" @onclick="() => InvokeAction(SubmitRequested)">Submit for approval</button> }
+            @if (details.CanReopen) { <button type="button" class="btn btn-primary" @onclick="() => InvokeAction(ResubmitRequested)">Submit</button> }
+            @if (details.CanReview)
+            {
+                <button type="button" class="btn btn-primary" @onclick="() => InvokeAction(ApproveRequested)">Approve</button>
+                <button type="button" class="btn btn-danger-soft" @onclick="() => InvokeAction(ReturnRequested)">Return</button>
+            }
+            @if (details.CanDelete) { <button type="button" class="btn btn-danger-soft" @onclick="() => InvokeAction(DeleteRequested)">Delete</button> }
+        }
+    </HeaderActions>
+    <ChildContent>
+    @if (loading)
+    {
+        <LoadingState Text="Loading time entry history…" />
+    }
+    else if (error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@error</div>
+    }
+    else if (details is not null)
+    {
+        <div class="time-entry-detail">
+            <header class="time-entry-detail-head">
+                <div class="time-entry-owner">
+                    <UserAvatar Name="@details.UserName" ImageUrl="@details.UserAvatarUrl" ColorKey="@details.UserId" Size="lg" />
+                    <div>
+                        <span>Recorded by</span>
+                        <strong>@details.UserName</strong>
+                    </div>
+                </div>
+                <div class="time-entry-head-controls">
+                    <StatusPill Value="@details.Status" />
+                </div>
+            </header>
+
+            <div class="time-entry-summary-grid @(details.IsHistorical || TwoRowSummary ? "is-two-row" : null)">
+                <div><span>Project</span><strong title="@ProjectDisplay">@ProjectDisplay</strong></div>
+                <div><span>Work item</span><strong title="@WorkItemDisplay">@WorkItemDisplay</strong></div>
+                <div><span>Work date</span><strong>@details.WorkDate.ToString("dd MMM yyyy")</strong></div>
+                <div><span>Hours</span><strong>@details.Hours.ToString("0.##")</strong></div>
+            </div>
+
+            <section class="time-entry-description">
+                <span>Work completed</span>
+                <p>@details.Description</p>
+            </section>
+
+            @if (details.IsHistorical)
+            {
+                <div class="history-readonly-note">
+                    <PortalIcon Name="shield" />
+                    <div><strong>Historical record</strong><span>This approved time entry is locked. Its details, comments, and workflow cannot be changed.</span></div>
+                </div>
+            }
+
+            <section class="workflow-section" aria-labelledby="workflow-title">
+                <div class="workflow-section-head">
+                    <h3 id="workflow-title">Workflow and discussion</h3>
+                    <span>@details.Activities.Count @(details.Activities.Count == 1 ? "event" : "events")</span>
+                </div>
+
+                @if (details.Activities.Count == 0)
+                {
+                    <div class="workflow-empty">No workflow events were recorded for this legacy entry.</div>
+                }
+                else
+                {
+                    <ol class="workflow-timeline">
+                        @foreach (var activity in details.Activities)
+                        {
+                            <li class="workflow-event">
+                                <div class="workflow-avatar"><UserAvatar Name="@activity.ActorName" ImageUrl="@activity.ActorAvatarUrl" ColorKey="@activity.ActorUserId" Size="sm" /></div>
+                                <div class="workflow-event-body">
+                                    <div class="workflow-event-title">
+                                        <span><strong>@activity.ActorName</strong> @ActivityText(activity)</span>
+                                        <time datetime="@activity.OccurredAtUtc.ToString("O")">@FormatTimestamp(activity.OccurredAtUtc)</time>
+                                    </div>
+                                    @if (activity.TargetName is not null)
+                                    {
+                                        <div class="workflow-recipient"><PortalIcon Name="arrow" /> <span>To @activity.TargetName</span></div>
+                                    }
+                                    @if (activity.FromStatus.HasValue && activity.ToStatus.HasValue && activity.FromStatus != activity.ToStatus)
+                                    {
+                                        <div class="workflow-status-change">
+                                            <StatusPill Value="@activity.FromStatus.Value" />
+                                            <PortalIcon Name="arrow" />
+                                            <StatusPill Value="@activity.ToStatus.Value" />
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(activity.Comment))
+                                    {
+                                        <div class="workflow-comment">@activity.Comment</div>
+                                    }
+                                </div>
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+
+            @if (details.CanComment)
+            {
+                <div class="workflow-comment-form">
+                    <div class="field">
+                        <label for="time-entry-comment">Add to the discussion</label>
+                        <textarea id="time-entry-comment" class="form-control" @bind="commentInput.Comment" @bind:event="oninput" placeholder="Add context, answer feedback, or leave a review note…"></textarea>
+                        @if (commentError is not null) { <span class="validation-message">@commentError</span> }
+                    </div>
+                    <div class="workflow-comment-actions">
+                        <span>Visible to the entry owner and management team</span>
+                        <button type="button" class="btn btn-primary" disabled="@(posting || string.IsNullOrWhiteSpace(commentInput.Comment))" @onclick="PostComment">@(posting ? "Posting…" : "Post comment")</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    </ChildContent>
+</PortalModal>
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public Guid? EntryId { get; set; }
+    [Parameter] public bool TwoRowSummary { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback<TimeEntryDetails> EditRequested { get; set; }
+    [Parameter] public EventCallback<TimeEntryDetails> DeleteRequested { get; set; }
+    [Parameter] public EventCallback<TimeEntryDetails> SubmitRequested { get; set; }
+    [Parameter] public EventCallback<TimeEntryDetails> ResubmitRequested { get; set; }
+    [Parameter] public EventCallback<TimeEntryDetails> ApproveRequested { get; set; }
+    [Parameter] public EventCallback<TimeEntryDetails> ReturnRequested { get; set; }
+
+    private TimeEntryDetails? details;
+    private Guid? loadedEntryId;
+    private CommentInput commentInput = new();
+    private string? error;
+    private string? commentError;
+    private bool loading;
+    private bool posting;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Visible || !EntryId.HasValue || loadedEntryId == EntryId)
+            return;
+
+        await LoadDetails(EntryId.Value);
+    }
+
+    private async Task LoadDetails(Guid id)
+    {
+        loading = true;
+        error = null;
+        try
+        {
+            details = await TimeEntryService.GetDetailsAsync(id);
+            loadedEntryId = id;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task PostComment()
+    {
+        if (!EntryId.HasValue) return;
+        if (string.IsNullOrWhiteSpace(commentInput.Comment))
+        {
+            commentError = "Enter a comment.";
+            return;
+        }
+        posting = true;
+        error = null;
+        commentError = null;
+        try
+        {
+            await TimeEntryService.AddCommentAsync(EntryId.Value, commentInput.Comment);
+            commentInput = new();
+            loadedEntryId = null;
+            await LoadDetails(EntryId.Value);
+            Toasts.Success("Comment posted", "The time entry discussion has been updated.");
+            await Changed.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            commentError = ex.Message;
+        }
+        finally
+        {
+            posting = false;
+        }
+    }
+
+    private async Task InvokeAction(EventCallback<TimeEntryDetails> callback)
+    {
+        if (details is null) return;
+        var selected = details;
+        await CloseAsync();
+        await callback.InvokeAsync(selected);
+    }
+
+    private async Task CloseAsync()
+    {
+        details = null;
+        loadedEntryId = null;
+        commentInput = new();
+        error = null;
+        commentError = null;
+        await Closed.InvokeAsync();
+    }
+
+    private static string ActivityText(TimeEntryActivityItem activity) => activity.Type switch
+    {
+        TimeEntryActivityType.Created => "created the time entry",
+        TimeEntryActivityType.Updated => "updated the draft",
+        TimeEntryActivityType.Submitted => "submitted the entry for review",
+        TimeEntryActivityType.Approved => "approved the entry",
+        TimeEntryActivityType.Returned => "returned the entry for changes",
+        TimeEntryActivityType.Reopened => "reopened the entry as a draft",
+        TimeEntryActivityType.Comment => "added a comment",
+        _ => "updated the entry"
+    };
+
+    private static string FormatTimestamp(DateTime value) => value.ToLocalTime().ToString("dd MMM yyyy · HH:mm");
+    private string ProjectDisplay => details is null ? "" : $"{PublicReference.Project(details.ProjectNumber)} · {details.ProjectName}";
+    private string WorkItemDisplay => details?.WorkItemTitle is null ? "Not linked" : $"{PublicReference.WorkItem(details.WorkItemNumber!.Value)} · {details.WorkItemTitle}";
+
+    private sealed class CommentInput { public string Comment { get; set; } = ""; }
+}

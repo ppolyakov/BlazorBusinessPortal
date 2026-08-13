@@ -3,6 +3,7 @@ using System;
 using BusinessPortal.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BusinessPortal.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260813131424_AddPublicNumbers")]
+    partial class AddPublicNumbers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -85,10 +88,6 @@ namespace BusinessPortal.Infrastructure.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
 
-                    b.Property<string>("ContactPhone")
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -100,9 +99,6 @@ namespace BusinessPortal.Infrastructure.Migrations
                     b.Property<string>("Notes")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
-
-                    b.Property<int>("Number")
-                        .HasColumnType("integer");
 
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
@@ -118,9 +114,6 @@ namespace BusinessPortal.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "Name");
-
-                    b.HasIndex("OrganizationId", "Number")
-                        .IsUnique();
 
                     b.HasIndex("OrganizationId", "Status");
 
@@ -332,9 +325,6 @@ namespace BusinessPortal.Infrastructure.Migrations
                     b.Property<DateTime?>("SubmittedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("SubmittedToUserId")
-                        .HasColumnType("text");
-
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -359,8 +349,6 @@ namespace BusinessPortal.Infrastructure.Migrations
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("ReviewedByUserId");
-
-                    b.HasIndex("SubmittedToUserId");
 
                     b.HasIndex("UserId");
 
@@ -500,60 +488,6 @@ namespace BusinessPortal.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "ProjectId", "Status");
 
                     b.ToTable("WorkItems");
-                });
-
-            modelBuilder.Entity("BusinessPortal.Domain.WorkItemActivity", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("ActorUserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("FromStatus")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<DateTime>("OccurredAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("TargetUserId")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ToStatus")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(24)
-                        .HasColumnType("character varying(24)");
-
-                    b.Property<Guid>("WorkItemId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActorUserId");
-
-                    b.HasIndex("TargetUserId");
-
-                    b.HasIndex("WorkItemId");
-
-                    b.HasIndex("OrganizationId", "WorkItemId", "OccurredAtUtc");
-
-                    b.ToTable("WorkItemActivities");
                 });
 
             modelBuilder.Entity("BusinessPortal.Infrastructure.ApplicationUser", b =>
@@ -844,11 +778,6 @@ namespace BusinessPortal.Infrastructure.Migrations
 
                     b.HasOne("BusinessPortal.Infrastructure.ApplicationUser", null)
                         .WithMany()
-                        .HasForeignKey("SubmittedToUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BusinessPortal.Infrastructure.ApplicationUser", null)
-                        .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -889,26 +818,6 @@ namespace BusinessPortal.Infrastructure.Migrations
                     b.HasOne("BusinessPortal.Domain.Project", null)
                         .WithMany()
                         .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("BusinessPortal.Domain.WorkItemActivity", b =>
-                {
-                    b.HasOne("BusinessPortal.Infrastructure.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("ActorUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("BusinessPortal.Infrastructure.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("TargetUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BusinessPortal.Domain.WorkItem", null)
-                        .WithMany()
-                        .HasForeignKey("WorkItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

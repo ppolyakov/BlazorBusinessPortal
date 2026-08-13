@@ -4,39 +4,37 @@
 @inject ToastService Toasts
 
 <PageTitle>Approvals · Vela</PageTitle>
-<PageHeader Eyebrow="Review queue" Title="Time approvals" Description="Review submitted work from other team members. Every decision is audited and concurrency-safe." />
+<PageHeader Eyebrow="Review queue" Title="Time approvals" Description="Open an entry to review its complete workflow and make a decision." />
 
 @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
 
-<ConfirmationModal Visible="@(approving is not null)"
-                   Title="Approve time entry"
-                   Message="@(approving is null ? "" : $"Approve {approving.Hours:0.##} hours for {approving.UserName}?")"
-                   ConfirmText="Approve entry"
-                   Busy="deciding"
-                   Confirmed="ConfirmApprove"
-                   Cancelled="CancelApprove" />
+<TimeEntryDetailsModal Visible="@detailsId.HasValue" EntryId="detailsId" TwoRowSummary="true" Closed="CloseDetails" Changed="Load" ApproveRequested="BeginApprove" ReturnRequested="BeginReturn" />
+<ConfirmationModal Visible="@(approving.Count > 0)" Title="Approve time entries" Message="@ApproveMessage" ConfirmText="Approve" Busy="deciding" Confirmed="ConfirmApprove" Cancelled="CancelApprove" />
 
-<PortalModal Visible="@(rejecting is not null)" Title="Reject time entry" Closed="CancelReject">
-    @if (rejecting is not null)
+<PortalModal Visible="@(returning is not null)" Title="@(returning is null ? "Return time entry" : $"Return {PublicReference.TimeEntry(returning.Number)}")" Closed="CancelReturn">
+    @if (returning is not null)
     {
-        <p>@rejecting.WorkDate.ToString("yyyy-MM-dd") · @rejecting.ProjectName · @rejecting.Hours.ToString("0.##") hours</p>
-        <div class="field"><label for="reject-comment">Reviewer feedback</label><textarea id="reject-comment" class="form-control" @bind="rejectComment"></textarea></div>
-        <div class="head-actions"><button class="btn btn-danger-soft" disabled="@(deciding || string.IsNullOrWhiteSpace(rejectComment))" @onclick="ConfirmReject">@(deciding ? "Working…" : "Reject entry")</button><button class="btn btn-quiet" disabled="@deciding" @onclick="CancelReject">Cancel</button></div>
+        <p>@returning.WorkDate.ToString("yyyy-MM-dd") · @returning.ProjectName · @returning.Hours.ToString("0.##") hours</p>
+        <div class="field"><label for="return-comment">Reviewer feedback</label><textarea id="return-comment" class="form-control" @bind="returnComment"></textarea></div>
+        <div class="head-actions"><button class="btn btn-danger-soft" disabled="@(deciding || string.IsNullOrWhiteSpace(returnComment))" @onclick="ConfirmReturn">@(deciding ? "Working…" : "Return entry")</button></div>
     }
 </PortalModal>
 
 <section class="panel">
+    <div class="toolbar"><div class="filter-bar"><input class="form-control" placeholder="Search reference, employee, project, or description" @bind="search" @bind:event="oninput" aria-label="Search approvals" /><button class="btn btn-quiet" @onclick="ApplySearch">Apply</button></div></div>
     @if (result is null) { <LoadingState Text="Loading approval queue…" /> }
     else if (result.Items.Count == 0) { <EmptyState Title="The queue is clear" Description="Submitted time from other team members will appear here." /> }
     else
     {
+        @if (selectedIds.Count > 0) { <div class="selection-toolbar"><strong>@selectedIds.Count selected</strong><button type="button" class="btn btn-primary btn-sm" @onclick="BeginBulkApprove">Approve selected</button><button type="button" class="btn btn-quiet btn-sm" @onclick="ClearSelection">Clear</button></div> }
         <div class="table-shell">
-            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
-                <TemplateColumn Title="Employee"><PersonCell Name="@context.UserName" ImageUrl="@context.UserAvatarUrl" ColorKey="@context.UserId" Secondary="@context.WorkDate.ToString("yyyy-MM-dd")" /></TemplateColumn>
-                <TemplateColumn Title="Work"><strong>@context.ProjectName</strong><div class="muted">@context.WorkItemTitle</div></TemplateColumn>
-                <PropertyColumn Property="x => x.Description" Title="Description" />
-                <PropertyColumn Property="x => x.Hours" Title="Hours" Format="0.##" Class="cell-number" />
-                <TemplateColumn Title="Decision" Class="cell-actions"><div class="head-actions"><button class="btn btn-primary btn-sm" @onclick="() => BeginApprove(context)">Approve</button><button class="btn btn-danger-soft btn-sm" @onclick="() => BeginReject(context)">Reject</button></div></TemplateColumn>
+            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
+                <TemplateColumn Class="cell-select"><HeaderTemplate><input type="checkbox" aria-label="Select all approvals on this page" checked="@AllPageSelected" @onchange="ToggleAll" /></HeaderTemplate><ChildContent><input type="checkbox" aria-label="Select @context.Reference" checked="@selectedIds.Contains(context.Id)" @onchange="args => ToggleSelection(context.Id, args)" @onclick:stopPropagation="true" /></ChildContent></TemplateColumn>
+                <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference"><div class="row-open-target" @onclick="() => OpenDetails(context.Id)">@context.Reference</div></TemplateColumn>
+                <TemplateColumn Title="Employee" SortBy="@sortByPerson"><div class="row-open-target" @onclick="() => OpenDetails(context.Id)"><PersonCell Name="@context.UserName" ImageUrl="@context.UserAvatarUrl" ColorKey="@context.UserId" Secondary="@context.WorkDate.ToString("yyyy-MM-dd")" /></div></TemplateColumn>
+                <TemplateColumn Title="Work" SortBy="@sortByProject"><div class="row-open-target row-open-stack" @onclick="() => OpenDetails(context.Id)"><strong>@context.ProjectReference · @context.ProjectName</strong><div class="muted">@(context.WorkItemReference is null ? context.WorkItemTitle : $"{context.WorkItemReference} · {context.WorkItemTitle}")</div></div></TemplateColumn>
+                <TemplateColumn Title="Description" SortBy="@sortByDescription"><div class="row-open-target" @onclick="() => OpenDetails(context.Id)">@context.Description</div></TemplateColumn>
+                <TemplateColumn Title="Hours" SortBy="@sortByHours" Class="cell-number"><div class="row-open-target" @onclick="() => OpenDetails(context.Id)">@context.Hours.ToString("0.##")</div></TemplateColumn>
             </QuickGrid>
         </div>
         <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
@@ -45,47 +43,41 @@
 
 @code {
     private PageResult<TimeEntryListItem>? result;
-    private TimeEntryListItem? approving;
-    private TimeEntryListItem? rejecting;
-    private string rejectComment = "";
+    private IReadOnlyCollection<TimeEntryVersion> approving = [];
+    private TimeEntryDetails? returning;
+    private string returnComment = "";
+    private string? search;
     private string? error;
     private bool deciding;
+    private Guid? detailsId;
+    private readonly HashSet<Guid> selectedIds = [];
     private int page = 1;
     private int pageSize = 20;
-    protected override Task OnInitializedAsync() => Load();
-    private async Task Load() => result = await TimeEntryService.ApprovalsAsync(new(page, pageSize));
+    private static readonly GridSort<TimeEntryListItem> sortByNumber = GridSort<TimeEntryListItem>.ByAscending(x => x.Number);
+    private static readonly GridSort<TimeEntryListItem> sortByPerson = GridSort<TimeEntryListItem>.ByAscending(x => x.UserName);
+    private static readonly GridSort<TimeEntryListItem> sortByProject = GridSort<TimeEntryListItem>.ByAscending(x => x.ProjectName);
+    private static readonly GridSort<TimeEntryListItem> sortByDescription = GridSort<TimeEntryListItem>.ByAscending(x => x.Description);
+    private static readonly GridSort<TimeEntryListItem> sortByHours = GridSort<TimeEntryListItem>.ByAscending(x => x.Hours);
+    private bool AllPageSelected => result is { Items.Count: > 0 } && result.Items.All(x => selectedIds.Contains(x.Id));
+    private string ApproveMessage => approving.Count == 1 ? "Approve this time entry and move it to history?" : $"Approve {approving.Count} selected time entries and move them to history?";
+    [SupplyParameterFromQuery(Name = "entry")] private Guid? RequestedEntryId { get; set; }
+
+    protected override async Task OnInitializedAsync() { await Load(); if (RequestedEntryId.HasValue) detailsId = RequestedEntryId; }
+    private async Task Load() { result = await TimeEntryService.ApprovalsAsync(new(page, pageSize, search, "number")); selectedIds.Clear(); }
+    private async Task ApplySearch() { page = 1; await Load(); }
     private async Task ChangePage(int value) { page = value; await Load(); }
     private async Task ChangePageSize(int value) { pageSize = value; page = 1; await Load(); }
-    private void BeginApprove(TimeEntryListItem item)
-    {
-        error = null;
-        approving = item;
-    }
-    private void CancelApprove() => approving = null;
-    private async Task ConfirmApprove()
-    {
-        if (approving is null) return;
-        var item = approving;
-        deciding = true;
-        try
-        {
-            await Run(() => TimeEntryService.ApproveAsync(item.Id, item.Version), "Time entry approved.");
-            approving = null;
-        }
-        finally { deciding = false; }
-    }
-    private void BeginReject(TimeEntryListItem item) { rejecting = item; rejectComment = ""; }
-    private void CancelReject() { if (!deciding) rejecting = null; }
-    private async Task ConfirmReject()
-    {
-        if (rejecting is null) return;
-        deciding = true;
-        try
-        {
-            await Run(() => TimeEntryService.RejectAsync(rejecting.Id, rejecting.Version, rejectComment), "Time entry rejected with feedback.");
-            rejecting = null;
-        }
-        finally { deciding = false; }
-    }
+    private void BeginApprove(TimeEntryDetails details) { error = null; approving = [new(details.Id, details.Version)]; }
+    private void BeginBulkApprove() { if (result is null) return; approving = result.Items.Where(x => selectedIds.Contains(x.Id)).Select(x => new TimeEntryVersion(x.Id, x.Version)).ToArray(); }
+    private void CancelApprove() => approving = [];
+    private void OpenDetails(Guid id) { error = null; detailsId = id; }
+    private void CloseDetails() => detailsId = null;
+    private async Task ConfirmApprove() { if (approving.Count == 0) return; deciding = true; try { var count = approving.Count; await Run(() => TimeEntryService.ApproveAsync(approving), count == 1 ? "Time entry approved." : $"{count} time entries approved."); approving = []; } finally { deciding = false; } }
+    private void BeginReturn(TimeEntryDetails details) { returning = details; returnComment = ""; }
+    private void CancelReturn() { if (!deciding) returning = null; }
+    private async Task ConfirmReturn() { if (returning is null) return; deciding = true; try { await Run(() => TimeEntryService.ReturnAsync(returning.Id, returning.Version, returnComment), "Time entry returned with feedback."); returning = null; } finally { deciding = false; } }
     private async Task Run(Func<Task> operation, string success) { try { error = null; await operation(); Toasts.Success(success); await Load(); } catch (Exception ex) { error = ex.Message; } }
+    private void ToggleSelection(Guid id, ChangeEventArgs args) { if (args.Value is true) selectedIds.Add(id); else selectedIds.Remove(id); }
+    private void ToggleAll(ChangeEventArgs args) { if (result is null) return; if (args.Value is true) selectedIds.UnionWith(result.Items.Select(x => x.Id)); else selectedIds.ExceptWith(result.Items.Select(x => x.Id)); }
+    private void ClearSelection() => selectedIds.Clear();
 }

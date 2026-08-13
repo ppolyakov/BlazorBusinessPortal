@@ -28,12 +28,12 @@
     {
         <div class="table-shell">
             <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
-                <PropertyColumn Property="x => x.OccurredAtUtc" Title="UTC time" Format="yyyy-MM-dd HH:mm" Class="cell-date" />
-                <TemplateColumn Title="Actor"><PersonCell Name="@context.UserName" ImageUrl="@context.UserAvatarUrl" ColorKey="@context.UserId" /></TemplateColumn>
-                <PropertyColumn Property="x => x.Action" Title="Action" />
-                <PropertyColumn Property="x => x.EntityType" Title="Entity" />
-                <PropertyColumn Property="x => x.EntityId" Title="Identifier" />
-                <PropertyColumn Property="x => x.Summary" Title="Safe summary" />
+                <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference">@context.EntityId</TemplateColumn>
+                <PropertyColumn Property="x => x.OccurredAtUtc" Title="UTC time" Format="yyyy-MM-dd HH:mm" Sortable="true" Class="cell-date" />
+                <TemplateColumn Title="Actor" SortBy="@sortByActor"><PersonCell Name="@context.UserName" ImageUrl="@context.UserAvatarUrl" ColorKey="@context.UserId" /></TemplateColumn>
+                <TemplateColumn Title="Action" SortBy="@sortByAction"><AuditBadge Value="@context.Action" /></TemplateColumn>
+                <TemplateColumn Title="Entity" SortBy="@sortByEntity"><AuditBadge Value="@context.EntityType" Entity="true" /></TemplateColumn>
+                <PropertyColumn Property="x => x.Summary" Title="Safe summary" Sortable="true" />
             </QuickGrid>
         </div>
         <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
@@ -50,12 +50,18 @@
     private string? error;
     private int page = 1;
     private int pageSize = 20;
+    private static readonly GridSort<AuditListItem> sortByNumber = GridSort<AuditListItem>.ByAscending(x => x.EntityId);
+    private static readonly GridSort<AuditListItem> sortByActor = GridSort<AuditListItem>.ByAscending(x => x.UserName);
+    private static readonly GridSort<AuditListItem> sortByAction = GridSort<AuditListItem>.ByAscending(x => x.Action);
+    private static readonly GridSort<AuditListItem> sortByEntity = GridSort<AuditListItem>.ByAscending(x => x.EntityType);
     private IReadOnlyList<PortalSelectOption<string>> ActionOptions => filterOptions.Actions
-        .Select(value => new PortalSelectOption<string>(value, value))
+        .OrderBy(AuditDisplay.ActionLabel)
+        .Select(value => new PortalSelectOption<string>(value, AuditDisplay.ActionLabel(value)))
         .Prepend(new(null!, "All actions"))
         .ToArray();
     private IReadOnlyList<PortalSelectOption<string>> EntityTypeOptions => filterOptions.EntityTypes
-        .Select(value => new PortalSelectOption<string>(value, value))
+        .OrderBy(AuditDisplay.EntityLabel)
+        .Select(value => new PortalSelectOption<string>(value, AuditDisplay.EntityLabel(value)))
         .Prepend(new(null!, "All entity types"))
         .ToArray();
     protected override async Task OnInitializedAsync()
@@ -70,7 +76,7 @@
             error = ex.Message;
         }
     }
-    private async Task Load() { try { error = null; result = await AuditService.SearchAsync(new(page, pageSize), action, entityType, from, through); } catch (Exception ex) { error = ex.Message; } }
+    private async Task Load() { try { error = null; result = await AuditService.SearchAsync(new(page, pageSize, Sort: "number"), action, entityType, from, through); } catch (Exception ex) { error = ex.Message; } }
     private async Task Apply() { page = 1; await Load(); }
     private async Task ChangePage(int value) { page = value; await Load(); }
     private async Task ChangePageSize(int value) { pageSize = value; page = 1; await Load(); }

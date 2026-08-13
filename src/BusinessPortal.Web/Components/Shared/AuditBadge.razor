@@ -1,0 +1,14 @@
+<span class="audit-badge audit-tone-@Tone">@Label</span>
+
+@code {
+    [Parameter, EditorRequired] public string Value { get; set; } = "";
+    [Parameter] public bool Entity { get; set; }
+
+    private string Label => Entity
+        ? AuditDisplay.EntityLabel(Value)
+        : AuditDisplay.ActionLabel(Value);
+
+    private string Tone => Entity
+        ? AuditDisplay.EntityTone(Value)
+        : AuditDisplay.ActionTone(Value);
+}

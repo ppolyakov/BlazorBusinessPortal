@@ -1,7 +1,20 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @layout BusinessPortal.Web.Components.Layout.MainLayout
+@inject IConfiguration Configuration
 
-<PageHeader Eyebrow="Account" Title="Account settings" Description="Manage your profile, security methods, and personal data." />
+<PageHeader Eyebrow="Account" Title="Account settings" Description="Review your profile, security methods, and personal data." />
+
+@if (DemoAccountLocked)
+{
+    <aside id="demo-account-lock-note" class="demo-account-lock-banner" role="note" aria-label="Public demo account protection">
+        <span class="demo-account-lock-icon"><PortalIcon Name="shield" /></span>
+        <div>
+            <strong>Account changes are disabled in this public demo</strong>
+            <p>These settings remain visible so you can review the complete product experience. Editing profile data, credentials, security methods, passkeys, and personal data is intentionally locked to keep the shared demo ready for every visitor.</p>
+        </div>
+        <span class="demo-account-lock-badge">Demo protected</span>
+    </aside>
+}
 
 <div class="account-layout">
     <aside class="account-nav-card">
@@ -12,6 +25,12 @@
         <ManageNavMenu />
     </aside>
     <section class="panel account-content">
-        @Body
+        <fieldset class="@(DemoAccountLocked ? "demo-account-locked" : "account-settings-fieldset")" disabled="@DemoAccountLocked" aria-describedby="@(DemoAccountLocked ? "demo-account-lock-note" : null)">
+            @Body
+        </fieldset>
     </section>
 </div>
+
+@code {
+    private bool DemoAccountLocked => DemoAccountProtection.IsEnabled(Configuration);
+}

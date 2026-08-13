@@ -11,52 +11,80 @@
 <PageTitle>Sign in · Vela</PageTitle>
 
 <div class="login-shell">
-    <section class="login-story">
-        <div class="login-brand-lockup"><BrandLogo Class="large" /><span><strong>Vela</strong><small>Work, clearly.</small></span></div>
-        <p class="eyebrow">Business management, without the noise</p>
-        <h1>Make the next decision with confidence.</h1>
-        <p>Clients, delivery, time approvals, reporting, and audit history in one focused workspace.</p>
-        <div class="login-proof"><span>✓</span> Organization-isolated data</div>
-        <div class="login-proof"><span>✓</span> Role-aware workflows</div>
-        <div class="login-proof"><span>✓</span> PostgreSQL-backed reporting</div>
-    </section>
-    <section class="login-card">
-        <div>
-            <p class="eyebrow">Welcome back</p>
-            <h2>Sign in to your workspace</h2>
-            <p class="muted">Use your organization account. Invalid attempts return a generic response.</p>
-        </div>
-        @if (errorMessage is not null)
+    <header class="login-brand-lockup">
+        <BrandLogo Class="large" />
+        <span><strong>Vela</strong><small>Work, clearly.</small></span>
+    </header>
+
+    <div class="login-layout @(DemoAccessEnabled ? "has-demo" : null)">
+        <section class="login-card">
+            <div class="login-heading">
+                <p class="eyebrow">Welcome back</p>
+                <h1>Sign in to your workspace</h1>
+                <p class="muted">Use your team credentials to continue.</p>
+            </div>
+            @if (errorMessage is not null)
+            {
+                <div class="alert alert-danger" role="alert">@errorMessage</div>
+            }
+            @if (DemoError is not null)
+            {
+                <div class="alert alert-danger" role="alert">Demo access is temporarily unavailable. Please try again.</div>
+            }
+            <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login" class="login-form">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="validation-message" />
+                <div class="field">
+                    <label for="login-email">Email address</label>
+                    <InputText @bind-Value="Input.Email" id="login-email" class="form-control" autocomplete="username" placeholder="name@company.com" />
+                    <ValidationMessage For="() => Input.Email" />
+                </div>
+                <div class="field">
+                    <label for="login-password">Password</label>
+                    <InputText type="password" @bind-Value="Input.Password" id="login-password" class="form-control" autocomplete="current-password" placeholder="Enter your password" />
+                    <ValidationMessage For="() => Input.Password" />
+                </div>
+                <label class="check-line"><InputCheckbox @bind-Value="Input.RememberMe" /> Keep me signed in</label>
+                <button type="submit" class="btn btn-primary btn-lg w-100">Sign in</button>
+            </EditForm>
+            <p class="login-support">Having trouble signing in? Contact your workspace administrator.</p>
+        </section>
+
+        @if (DemoAccessEnabled)
         {
-            <div class="alert alert-danger" role="alert">@errorMessage</div>
+            <aside class="demo-access-card" aria-labelledby="demo-access-title">
+                <div class="demo-access-copy">
+                    <span class="demo-kicker">Portfolio demo</span>
+                    <h2 id="demo-access-title">Explore a ready-to-use workspace</h2>
+                    <p>Choose a perspective and step into a populated workspace. No password is required.</p>
+                </div>
+
+                <form method="post" action="/account/demo-login" data-enhance="false" class="demo-role-list">
+                    <AntiforgeryToken />
+                    <button type="submit" name="profile" value="administrator" class="demo-role-button">
+                        <span class="demo-role-mark admin" aria-hidden="true">A</span>
+                        <span><strong>Administrator</strong><small>Full workspace and audit visibility</small></span>
+                        <span class="demo-role-arrow" aria-hidden="true">→</span>
+                    </button>
+                    <button type="submit" name="profile" value="manager" class="demo-role-button">
+                        <span class="demo-role-mark manager" aria-hidden="true">M</span>
+                        <span><strong>Manager</strong><small>Projects, team time, and approvals</small></span>
+                        <span class="demo-role-arrow" aria-hidden="true">→</span>
+                    </button>
+                    <button type="submit" name="profile" value="employee" class="demo-role-button">
+                        <span class="demo-role-mark employee" aria-hidden="true">E</span>
+                        <span><strong>Employee</strong><small>Assigned work and personal time</small></span>
+                        <span class="demo-role-arrow" aria-hidden="true">→</span>
+                    </button>
+                </form>
+
+                <div class="demo-disclosure">
+                    <strong>Safe, fictional workspace</strong>
+                    <span>Changes are shared with other visitors and reset daily at 03:00 UTC.</span>
+                </div>
+            </aside>
         }
-        <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
-            <DataAnnotationsValidator />
-            <ValidationSummary class="validation-message" />
-            <div class="field">
-                <label for="login-email">Email address</label>
-                <InputText @bind-Value="Input.Email" id="login-email" class="form-control" autocomplete="username" />
-                <ValidationMessage For="() => Input.Email" />
-            </div>
-            <div class="field">
-                <label for="login-password">Password</label>
-                <InputText type="password" @bind-Value="Input.Password" id="login-password" class="form-control" autocomplete="current-password" />
-                <ValidationMessage For="() => Input.Password" />
-            </div>
-            <label class="check-line"><InputCheckbox @bind-Value="Input.RememberMe" /> Keep me signed in</label>
-            <button type="submit" class="btn btn-primary btn-lg w-100">Sign in</button>
-        </EditForm>
-        @if (Configuration.GetValue<bool>("SeedDemoData"))
-        {
-            <div class="demo-accounts">
-                <strong>Demo accounts</strong>
-                <span>admin@northstar.demo</span>
-                <span>manager@northstar.demo</span>
-                <span>employee@northstar.demo</span>
-                <small>Password is provided through your local environment.</small>
-            </div>
-        }
-    </section>
+    </div>
 </div>
 
 @code {
@@ -66,6 +94,11 @@
     [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
     [SupplyParameterFromForm] private InputModel Input { get; set; } = default!;
     [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery(Name = "demoError")] private string? DemoError { get; set; }
+
+    private bool DemoAccessEnabled =>
+        Configuration.GetValue<bool>("SeedDemoData")
+        && Configuration.GetValue<bool>("DemoAccess:Enabled");
 
     protected override async Task OnInitializedAsync()
     {

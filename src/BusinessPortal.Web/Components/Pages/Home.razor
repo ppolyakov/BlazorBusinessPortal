@@ -96,14 +96,15 @@ else
             {
                 <div class="table-shell">
                     <QuickGrid Items="@model.UpcomingWork.AsQueryable()" Class="quick-grid">
-                        <PropertyColumn Property="x => x.Title" Title="Work item" />
-                        <PropertyColumn Property="x => x.ProjectName" Title="Project" />
-                        <TemplateColumn Title="Owner">
+                        <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference">@context.Reference</TemplateColumn>
+                        <PropertyColumn Property="x => x.Title" Title="Work item" Sortable="true" />
+                        <TemplateColumn Title="Project" SortBy="@sortByProject"><strong>@context.ProjectReference</strong><div class="muted">@context.ProjectName</div></TemplateColumn>
+                        <TemplateColumn Title="Owner" SortBy="@sortByOwner">
                             @if (context.AssignedToName is null) { <span class="muted">Unassigned</span> }
                             else { <PersonCell Name="@context.AssignedToName" ImageUrl="@context.AssignedToAvatarUrl" ColorKey="@context.AssignedToUserId" Emphasized="false" /> }
                         </TemplateColumn>
-                        <TemplateColumn Title="Priority" Class="cell-status"><StatusPill Value="@context.Priority" /></TemplateColumn>
-                        <PropertyColumn Property="x => x.DueDate" Title="Due" Format="yyyy-MM-dd" Class="cell-date" />
+                        <TemplateColumn Title="Priority" SortBy="@sortByPriority" Class="cell-status"><StatusPill Value="@context.Priority" /></TemplateColumn>
+                        <PropertyColumn Property="x => x.DueDate" Title="Due" Format="yyyy-MM-dd" Sortable="true" Class="cell-date" />
                     </QuickGrid>
                 </div>
             }
@@ -115,6 +116,10 @@ else
     private DashboardModel? model;
     private string? error;
     private string greeting = "Hello.";
+    private static readonly GridSort<WorkItemListItem> sortByNumber = GridSort<WorkItemListItem>.ByAscending(x => x.Number);
+    private static readonly GridSort<WorkItemListItem> sortByOwner = GridSort<WorkItemListItem>.ByAscending(x => x.AssignedToName);
+    private static readonly GridSort<WorkItemListItem> sortByPriority = GridSort<WorkItemListItem>.ByAscending(x => x.Priority);
+    private static readonly GridSort<WorkItemListItem> sortByProject = GridSort<WorkItemListItem>.ByAscending(x => x.ProjectName);
     private string CurrentMonthLabel => DateTime.UtcNow.ToString("MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
     private string NoHoursTitle => $"No hours recorded in {CurrentMonthLabel}";
     private string ProjectCountLabel => model?.HoursByProject.Count == 1 ? "1 project represented" : $"{model?.HoursByProject.Count ?? 0} projects represented";

@@ -24,7 +24,9 @@
     {
         NotificationType.TimeEntrySubmitted => "inbox",
         NotificationType.TimeEntryApproved => "check-circle",
-        NotificationType.TimeEntryRejected => "alert-circle",
+        NotificationType.TimeEntryReturned or NotificationType.WorkItemReturned => "alert-circle",
+        NotificationType.WorkItemCommented => "message-circle",
+        NotificationType.TimeEntryCommented => "message-circle",
         NotificationType.ProjectCompleted => "briefcase",
         NotificationType.WorkItemAssigned => "work",
         _ => "bell"

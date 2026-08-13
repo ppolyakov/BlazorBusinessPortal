@@ -11,8 +11,11 @@ public static class DependencyInjection
     {
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is required.");
-        services.AddDbContextFactory<ApplicationDbContext>(options =>
-            options.UseNpgsql(connectionString, npgsql => npgsql.EnableRetryOnFailure(3)));
+        services.AddSingleton<DemoIdentityMutationInterceptor>();
+        services.AddDbContextFactory<ApplicationDbContext>((provider, options) =>
+            options
+                .UseNpgsql(connectionString, npgsql => npgsql.EnableRetryOnFailure(3))
+                .AddInterceptors(provider.GetRequiredService<DemoIdentityMutationInterceptor>()));
         services.AddScoped<IClientService, ClientService>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IWorkItemService, WorkItemService>();
@@ -23,6 +26,8 @@ public static class DependencyInjection
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IUserDirectory, UserDirectory>();
         services.AddScoped<DemoDataSeeder>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddHostedService<DemoResetHostedService>();
         return services;
     }
 }

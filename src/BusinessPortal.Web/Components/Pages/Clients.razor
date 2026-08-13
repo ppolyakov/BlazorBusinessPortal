@@ -1,6 +1,7 @@
 @page "/clients"
 @attribute [Authorize]
 @inject IClientService ClientService
+@inject ICurrentUser CurrentUser
 @inject ToastService Toasts
 
 <PageTitle>Clients · Vela</PageTitle>
@@ -10,29 +11,37 @@
 
 @if (!editing && error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
 
-<PortalModal Visible="editing" Title="@(editId.HasValue ? "Edit client" : "Create client")" Closed="Cancel">
+<PortalModal Visible="editing" Title="@(editId.HasValue ? canManage ? "Edit client" : "Client details" : "Create client")" Closed="Cancel">
+    <HeaderActions>
+        @if (canManage) { <button type="submit" form="client-form" class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save")</button> }
+        @if (canManage && selectedClient is not null)
+        {
+            <button type="button" class="btn btn-danger-soft" disabled="@(selectedClient.ProjectCount > 0)" title="@(selectedClient.ProjectCount > 0 ? "Remove or reassign projects before deleting this client." : "Delete client")" @onclick="() => BeginDelete(selectedClient)">Delete</button>
+        }
+    </HeaderActions>
+    <ChildContent>
     @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
-    <EditForm Model="input" OnValidSubmit="Save" FormName="client-form">
+    <EditForm id="client-form" Model="input" OnValidSubmit="Save" FormName="client-form">
         <DataAnnotationsValidator />
         <ValidationSummary />
-        <div class="field-grid">
-            <div class="field"><label for="client-name">Client name</label><InputText id="client-name" class="form-control" @bind-Value="input.Name" /><ValidationMessage For="() => input.Name" /></div>
-            <div class="field"><label for="client-status">Status</label><PortalSelect TValue="ClientStatus" Id="client-status" MenuLabel="Client status" Options="ClientStatusOptions" @bind-Value="input.Status" /></div>
-            <div class="field"><label for="contact-name">Contact name</label><InputText id="contact-name" class="form-control" @bind-Value="input.ContactName" /></div>
-            <div class="field"><label for="contact-email">Contact email</label><InputText id="contact-email" class="form-control" @bind-Value="input.ContactEmail" /><ValidationMessage For="() => input.ContactEmail" /></div>
-            <div class="field wide"><label for="client-notes">Notes</label><InputTextArea id="client-notes" class="form-control" @bind-Value="input.Notes" /></div>
-        </div>
-        <div class="head-actions">
-            <button class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save client")</button>
-            <button type="button" class="btn btn-quiet" @onclick="Cancel">Cancel</button>
-        </div>
+        <fieldset class="modal-fieldset" disabled="@(!canManage)">
+            <div class="field-grid">
+                <div class="field"><label for="client-name">Client name</label><InputText id="client-name" class="form-control" @bind-Value="input.Name" /><ValidationMessage For="() => input.Name" /></div>
+                <div class="field"><label for="client-status">Status</label><PortalSelect TValue="ClientStatus" Id="client-status" MenuLabel="Client status" Options="ClientStatusOptions" @bind-Value="input.Status" /></div>
+                <div class="field"><label for="contact-name">Contact name</label><InputText id="contact-name" class="form-control" @bind-Value="input.ContactName" /></div>
+                <div class="field"><label for="contact-email">Contact email</label><InputText id="contact-email" class="form-control" @bind-Value="input.ContactEmail" /><ValidationMessage For="() => input.ContactEmail" /></div>
+                <div class="field"><label for="contact-phone">Phone number</label><InputText id="contact-phone" class="form-control" @bind-Value="input.ContactPhone" /><ValidationMessage For="() => input.ContactPhone" /></div>
+                <div class="field wide"><label for="client-notes">Notes</label><InputTextArea id="client-notes" class="form-control" @bind-Value="input.Notes" /></div>
+            </div>
+        </fieldset>
     </EditForm>
+    </ChildContent>
 </PortalModal>
 
-<ConfirmationModal Visible="@(pendingDelete is not null)"
+<ConfirmationModal Visible="@(pendingDeleteIds.Count > 0)"
                    Title="Delete client"
-                   Message="@(pendingDelete is null ? "" : $"Delete client '{pendingDelete.Name}' permanently? This action cannot be undone.")"
-                   ConfirmText="Delete client"
+                   Message="@DeleteMessage"
+                   ConfirmText="@(pendingDeleteIds.Count == 1 ? "Delete client" : "Delete clients")"
                    Destructive="true"
                    Busy="deleting"
                    Confirmed="ConfirmDelete"
@@ -47,24 +56,30 @@
     else if (result.Items.Count == 0) { <EmptyState Title="No matching clients" Description="Try a broader search or create the first client." /> }
     else
     {
+        @if (canManage && selectedIds.Count > 0)
+        {
+            <div class="selection-toolbar">
+                <strong>@selectedIds.Count client@(selectedIds.Count == 1 ? "" : "s") selected</strong>
+                <button type="button" class="btn btn-danger-soft btn-sm" disabled="@SelectedClientsHaveProjects" title="@(SelectedClientsHaveProjects ? "Remove or reassign projects before deleting the selected clients." : "Delete selected clients")" @onclick="BeginDeleteSelected">Delete selected</button>
+                <button type="button" class="btn btn-quiet btn-sm" @onclick="ClearSelection">Clear</button>
+            </div>
+        }
         <div class="table-shell">
-            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
-                <PropertyColumn Property="x => x.Name" Title="Client" />
-                <PropertyColumn Property="x => x.ContactName" Title="Contact" />
-                <PropertyColumn Property="x => x.ContactEmail" Title="Email" />
-                <TemplateColumn Title="Status" Class="cell-status"><StatusPill Value="@context.Status" /></TemplateColumn>
-                <PropertyColumn Property="x => x.ProjectCount" Title="Projects" Class="cell-number" />
-                <TemplateColumn Title="" Context="client" Class="cell-actions">
-                    <AuthorizeView Roles="@PortalRoles.Management" Context="authState">
-                        <div class="head-actions">
-                            <button class="btn btn-quiet btn-sm" @onclick="() => Edit(client.Id)">Edit</button>
-                            <button class="btn btn-danger-soft btn-sm"
-                                    disabled="@(client.ProjectCount > 0)"
-                                    title="@(client.ProjectCount > 0 ? "Remove or reassign projects before deleting this client." : "Delete client")"
-                                    @onclick="() => BeginDelete(client)">Delete</button>
-                        </div>
-                    </AuthorizeView>
-                </TemplateColumn>
+            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
+                @if (canManage)
+                {
+                    <TemplateColumn Class="cell-select">
+                        <HeaderTemplate><input type="checkbox" aria-label="Select all clients on this page" checked="@AllPageSelected" @onchange="ToggleAll" /></HeaderTemplate>
+                        <ChildContent><input type="checkbox" aria-label="Select @context.Reference" checked="@selectedIds.Contains(context.Id)" title="Select @context.Reference" @onchange="args => ToggleSelection(context.Id, args)" @onclick:stopPropagation="true" /></ChildContent>
+                    </TemplateColumn>
+                }
+                <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference"><div class="row-open-target" @onclick="() => Open(context)">@context.Reference</div></TemplateColumn>
+                <TemplateColumn Title="Client" SortBy="@sortByName"><div class="row-open-target" @onclick="() => Open(context)">@context.Name</div></TemplateColumn>
+                <TemplateColumn Title="Contact" SortBy="@sortByContact"><div class="row-open-target" @onclick="() => Open(context)">@context.ContactName</div></TemplateColumn>
+                <TemplateColumn Title="Email" SortBy="@sortByEmail"><div class="row-open-target" @onclick="() => Open(context)">@context.ContactEmail</div></TemplateColumn>
+                <TemplateColumn Title="Phone" SortBy="@sortByPhone"><div class="row-open-target" @onclick="() => Open(context)">@(context.ContactPhone ?? "—")</div></TemplateColumn>
+                <TemplateColumn Title="Status" SortBy="@sortByStatus" Class="cell-status"><div class="row-open-target" @onclick="() => Open(context)"><StatusPill Value="@context.Status" /></div></TemplateColumn>
+                <TemplateColumn Title="Projects" SortBy="@sortByProjects" Class="cell-number"><div class="row-open-target" @onclick="() => Open(context)">@context.ProjectCount</div></TemplateColumn>
             </QuickGrid>
         </div>
         <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
@@ -80,18 +95,33 @@
     private bool editing;
     private bool saving;
     private bool deleting;
-    private ClientListItem? pendingDelete;
+    private bool canManage;
+    private ClientListItem? selectedClient;
+    private readonly HashSet<Guid> selectedIds = [];
+    private IReadOnlyCollection<Guid> pendingDeleteIds = [];
     private int page = 1;
     private int pageSize = 20;
+    private static readonly GridSort<ClientListItem> sortByStatus = GridSort<ClientListItem>.ByAscending(x => x.Status);
+    private static readonly GridSort<ClientListItem> sortByNumber = GridSort<ClientListItem>.ByAscending(x => x.Number);
+    private static readonly GridSort<ClientListItem> sortByName = GridSort<ClientListItem>.ByAscending(x => x.Name);
+    private static readonly GridSort<ClientListItem> sortByContact = GridSort<ClientListItem>.ByAscending(x => x.ContactName);
+    private static readonly GridSort<ClientListItem> sortByEmail = GridSort<ClientListItem>.ByAscending(x => x.ContactEmail);
+    private static readonly GridSort<ClientListItem> sortByPhone = GridSort<ClientListItem>.ByAscending(x => x.ContactPhone);
+    private static readonly GridSort<ClientListItem> sortByProjects = GridSort<ClientListItem>.ByAscending(x => x.ProjectCount);
     private static readonly IReadOnlyList<PortalSelectOption<ClientStatus>> ClientStatusOptions = Enum.GetValues<ClientStatus>()
         .Select(value => new PortalSelectOption<ClientStatus>(value, value.ToString()))
         .ToArray();
+    private bool AllPageSelected => result is { Items.Count: > 0 } && result.Items.All(x => selectedIds.Contains(x.Id));
+    private bool SelectedClientsHaveProjects => result?.Items.Any(x => selectedIds.Contains(x.Id) && x.ProjectCount > 0) == true;
+    private string DeleteMessage => pendingDeleteIds.Count == 1
+        ? "Delete this client permanently? This action cannot be undone."
+        : $"Delete {pendingDeleteIds.Count} selected clients permanently? This action cannot be undone.";
 
-    protected override Task OnInitializedAsync() => Load();
-    private async Task Load() { error = null; result = await ClientService.SearchAsync(new(page, pageSize, search)); }
-    private void Create() { input = new(); editId = null; editing = true; error = null; }
-    private async Task Edit(Guid id) { error = null; input = await ClientService.GetAsync(id); editId = id; editing = true; }
-    private void Cancel() { editing = false; error = null; }
+    protected override async Task OnInitializedAsync() { canManage = (await CurrentUser.GetAsync()).CanManage; await Load(); }
+    private async Task Load() { error = null; result = await ClientService.SearchAsync(new(page, pageSize, search, "number")); selectedIds.Clear(); }
+    private void Create() { input = new(); editId = null; selectedClient = null; editing = true; error = null; }
+    private async Task Open(ClientListItem client) { error = null; input = await ClientService.GetAsync(client.Id); editId = client.Id; selectedClient = client; editing = true; }
+    private void Cancel() { editing = false; selectedClient = null; error = null; }
     private async Task ChangePage(int value) { page = value; await Load(); }
     private async Task ChangePageSize(int value) { pageSize = value; page = 1; await Load(); }
 
@@ -103,6 +133,7 @@
         {
             await ClientService.SaveAsync(editId, input);
             editing = false;
+            selectedClient = null;
             Toasts.Success("Client saved", $"{input.Name} is up to date.");
             await Load();
         }
@@ -112,28 +143,42 @@
 
     private void BeginDelete(ClientListItem client)
     {
-        pendingDelete = client;
+        pendingDeleteIds = [client.Id];
+        editing = false;
         error = null;
     }
 
-    private void CancelDelete() => pendingDelete = null;
+    private void BeginDeleteSelected()
+    {
+        if (SelectedClientsHaveProjects) return;
+        pendingDeleteIds = selectedIds.ToArray();
+        editing = false;
+        error = null;
+    }
+
+    private void ToggleSelection(Guid id, ChangeEventArgs args) { if (args.Value is true) selectedIds.Add(id); else selectedIds.Remove(id); }
+    private void ToggleAll(ChangeEventArgs args) { if (result is null) return; if (args.Value is true) selectedIds.UnionWith(result.Items.Select(x => x.Id)); else selectedIds.ExceptWith(result.Items.Select(x => x.Id)); }
+    private void ClearSelection() => selectedIds.Clear();
+    private void CancelDelete() => pendingDeleteIds = [];
 
     private async Task ConfirmDelete()
     {
-        if (pendingDelete is null) return;
-        var client = pendingDelete;
+        if (pendingDeleteIds.Count == 0) return;
+        var ids = pendingDeleteIds;
+        var count = ids.Count;
         deleting = true;
         try
         {
-            await ClientService.DeleteAsync(client.Id);
-            Toasts.Success("Client deleted", $"{client.Name} was removed from the workspace.");
-            pendingDelete = null;
+            await ClientService.DeleteAsync(ids);
+            Toasts.Success(count == 1 ? "Client deleted" : "Clients deleted", $"{count} client{(count == 1 ? "" : "s")} removed from the workspace.");
+            pendingDeleteIds = [];
+            selectedIds.Clear();
             await Load();
         }
         catch (Exception ex) { error = ex.Message; }
         finally
         {
-            pendingDelete = null;
+            pendingDeleteIds = [];
             deleting = false;
         }
     }

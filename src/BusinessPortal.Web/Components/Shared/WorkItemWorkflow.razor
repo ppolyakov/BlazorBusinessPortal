@@ -1,0 +1,105 @@
+@if (Details is not null)
+{
+    <section class="workflow-section" aria-labelledby="work-item-workflow-title">
+        <div class="workflow-section-head">
+            <h3 id="work-item-workflow-title">Workflow and discussion</h3>
+            <span>@Details.Activities.Count @(Details.Activities.Count == 1 ? "event" : "events")</span>
+        </div>
+
+        @if (Details.Activities.Count == 0)
+        {
+            <div class="workflow-empty">No workflow events were recorded for this legacy work item.</div>
+        }
+        else
+        {
+            <ol class="workflow-timeline">
+                @foreach (var activity in Details.Activities)
+                {
+                    <li class="workflow-event">
+                        <div class="workflow-avatar"><UserAvatar Name="@activity.ActorName" ImageUrl="@activity.ActorAvatarUrl" ColorKey="@activity.ActorUserId" Size="sm" /></div>
+                        <div class="workflow-event-body">
+                            <div class="workflow-event-title"><span><strong>@activity.ActorName</strong> @ActivityText(activity)</span><time datetime="@activity.OccurredAtUtc.ToString("O")">@activity.OccurredAtUtc.ToLocalTime().ToString("dd MMM yyyy · HH:mm")</time></div>
+                            @if (activity.TargetName is not null) { <div class="workflow-recipient"><PortalIcon Name="arrow" /> <span>To @activity.TargetName</span></div> }
+                            @if (activity.FromStatus.HasValue && activity.ToStatus.HasValue && activity.FromStatus != activity.ToStatus)
+                            {
+                                <div class="workflow-status-change"><StatusPill Value="@activity.FromStatus.Value" /><PortalIcon Name="arrow" /><StatusPill Value="@activity.ToStatus.Value" /></div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(activity.Comment)) { <div class="workflow-comment">@activity.Comment</div> }
+                        </div>
+                    </li>
+                }
+            </ol>
+        }
+    </section>
+
+    @if (Details.CanComment)
+    {
+        <div class="workflow-composer">
+            <div class="workflow-composer-head">
+                <span class="workflow-composer-icon"><PortalIcon Name="message-circle" /></span>
+                <div><strong>Discussion</strong><span>Share delivery context, a question, or a decision.</span></div>
+            </div>
+            <div class="field"><label for="work-item-comment">Message</label><textarea id="work-item-comment" class="form-control" maxlength="1000" @bind="comment" @bind:event="oninput" placeholder="Write a message to the team…"></textarea></div>
+            <div class="workflow-comment-actions"><span>Visible to everyone with access to this work item</span><button type="button" class="btn btn-primary" disabled="@(Busy || string.IsNullOrWhiteSpace(comment))" @onclick="PostComment"><PortalIcon Name="message-circle" /> Comment</button></div>
+
+            @if (Details.CanReturn)
+            {
+                <div class="workflow-return-action @(showReturnPanel ? "is-open" : null)">
+                    <button type="button" class="workflow-return-toggle" aria-expanded="@showReturnPanel" @onclick="ToggleReturnPanel">
+                        <span class="workflow-return-icon"><PortalIcon Name="return" /></span>
+                        <span><strong>Return to a manager</strong><small>Send the work item back with a reason and transfer responsibility.</small></span>
+                        <PortalIcon Name="chevron-down" Class="workflow-return-chevron" />
+                    </button>
+                    @if (showReturnPanel)
+                    {
+                        <div class="workflow-return-panel">
+                            <div class="field-grid">
+                                <div class="field"><label for="work-return-manager">Manager</label><PortalSelect TValue="string" Id="work-return-manager" MenuLabel="Return manager" Searchable="true" Options="ManagerOptions" @bind-Value="managerUserId" /></div>
+                                <div class="field wide"><label for="work-return-comment">Reason</label><textarea id="work-return-comment" class="form-control" maxlength="1000" @bind="returnComment" @bind:event="oninput" placeholder="Explain what needs a management decision…"></textarea></div>
+                            </div>
+                            <div class="workflow-comment-actions"><span>The selected manager will become responsible for this work item.</span><button type="button" class="btn btn-danger-soft" disabled="@(Busy || string.IsNullOrWhiteSpace(managerUserId) || string.IsNullOrWhiteSpace(returnComment))" @onclick="Return"><PortalIcon Name="return" /> Return</button></div>
+                        </div>
+                    }
+                </div>
+            }
+            else if (Details.IsAwaitingManagerComment)
+            {
+                <div class="workflow-return-locked"><PortalIcon Name="return" /><span><strong>Return becomes available after a manager replies.</strong><small>This keeps the return connected to a specific management decision.</small></span></div>
+            }
+        </div>
+    }
+    else if (Details.IsAwaitingReply)
+    {
+        <div class="workflow-awaiting-reply"><span class="workflow-composer-icon"><PortalIcon Name="message-circle" /></span><div><strong>Waiting for a reply</strong><span>You can add another message after someone else responds to the discussion.</span></div></div>
+    }
+    else
+    {
+        <div class="history-readonly-note"><PortalIcon Name="shield" /><div><strong>Historical record</strong><span>This completed work item and its workflow are read-only.</span></div></div>
+    }
+}
+
+@code {
+    [Parameter] public WorkItemDetails? Details { get; set; }
+    [Parameter] public IReadOnlyList<LookupItem<string>> Managers { get; set; } = [];
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<WorkItemReturnRequest> ReturnRequested { get; set; }
+    [Parameter] public EventCallback<string> CommentRequested { get; set; }
+    private string? managerUserId;
+    private string returnComment = "";
+    private string comment = "";
+    private bool showReturnPanel;
+    private IReadOnlyList<PortalSelectOption<string>> ManagerOptions => Managers.Select(x => new PortalSelectOption<string>(x.Id, x.Name)).Prepend(new(null!, "Choose a manager")).ToArray();
+    private void ToggleReturnPanel() => showReturnPanel = !showReturnPanel;
+    private async Task Return() { if (string.IsNullOrWhiteSpace(managerUserId) || string.IsNullOrWhiteSpace(returnComment)) return; await ReturnRequested.InvokeAsync(new(managerUserId, returnComment)); managerUserId = null; returnComment = ""; showReturnPanel = false; }
+    private async Task PostComment() { if (string.IsNullOrWhiteSpace(comment)) return; var value = comment; comment = ""; await CommentRequested.InvokeAsync(value); }
+    private static string ActivityText(WorkItemActivityItem activity) => activity.Type switch
+    {
+        WorkItemActivityType.Created => "created the work item",
+        WorkItemActivityType.Updated => "updated the work item",
+        WorkItemActivityType.Assigned => "assigned the work item",
+        WorkItemActivityType.Returned => "returned the work item",
+        WorkItemActivityType.Completed => "completed the work item",
+        WorkItemActivityType.Comment => "added a comment",
+        _ => "updated the work item"
+    };
+}

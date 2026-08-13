@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /source
 COPY . .
-RUN dotnet restore BusinessPortal.sln
+RUN dotnet restore src/BusinessPortal.Web/BusinessPortal.Web.csproj
 RUN dotnet publish src/BusinessPortal.Web/BusinessPortal.Web.csproj \
     --configuration Release \
     --no-restore \

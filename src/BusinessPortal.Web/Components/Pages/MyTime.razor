@@ -3,82 +3,61 @@
 @inject ITimeEntryService TimeEntryService
 @inject IProjectService ProjectService
 @inject IWorkItemService WorkItemService
+@inject IUserDirectory UserDirectory
 @inject ToastService Toasts
 
 <PageTitle>My time · Vela</PageTitle>
-<PageHeader Eyebrow="Time tracking" Title="My time" Description="Capture focused work, keep drafts flexible, and submit complete entries for review.">
-    <Actions><button class="btn btn-primary" @onclick="Create">New time entry</button></Actions>
-</PageHeader>
+<PageHeader Eyebrow="Time tracking" Title="My time" Description="Capture focused work, keep drafts flexible, and submit complete entries for review."><Actions><button class="btn btn-primary" @onclick="Create">New time entry</button></Actions></PageHeader>
 
 @if (error is not null && !editing) { <div class="alert alert-danger" role="alert">@error</div> }
 
-<ConfirmationModal Visible="@pendingSubmitId.HasValue"
-                   Title="Submit time entry"
-                   Message="Submit this entry for review? It cannot be edited until it has been reviewed."
-                   ConfirmText="Submit entry"
-                   Busy="processingConfirmation"
-                   Confirmed="ConfirmSubmit"
-                   Cancelled="CancelConfirmation" />
+<PortalModal Visible="@pendingSubmitId.HasValue" Title="Submit time entry" Closed="CancelConfirmation">
+    @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+    <p class="muted">Choose the manager responsible for reviewing this entry.</p>
+    <div class="field"><label for="submit-manager">Review manager</label><PortalSelect TValue="string" Id="submit-manager" MenuLabel="Review manager" Searchable="true" Options="ManagerOptions" @bind-Value="submitManagerId" /></div>
+    <div class="head-actions"><button type="button" class="btn btn-primary" disabled="@(processingConfirmation || string.IsNullOrWhiteSpace(submitManagerId))" @onclick="ConfirmSubmit">@(processingConfirmation ? "Submitting…" : "Submit entry")</button></div>
+</PortalModal>
+<ConfirmationModal Visible="@(pendingDeleteIds.Count > 0)" Title="Delete draft" Message="@DeleteMessage" ConfirmText="Delete" Destructive="true" Busy="processingConfirmation" Confirmed="ConfirmDelete" Cancelled="CancelConfirmation" />
 
-<ConfirmationModal Visible="@pendingDeleteId.HasValue"
-                   Title="Delete draft"
-                   Message="Delete this draft permanently? This action cannot be undone."
-                   ConfirmText="Delete draft"
-                   Destructive="true"
-                   Busy="processingConfirmation"
-                   Confirmed="ConfirmDelete"
-                   Cancelled="CancelConfirmation" />
+<TimeEntryDetailsModal Visible="@detailsId.HasValue" EntryId="detailsId" Closed="CloseDetails" Changed="Load" EditRequested="EditFromDetails" DeleteRequested="DeleteFromDetails" SubmitRequested="SubmitFromDetails" ResubmitRequested="ResubmitFromDetails" />
 
 <PortalModal Visible="editing" Title="@(editId.HasValue ? "Edit draft" : "Record time")" Closed="Cancel">
+    <HeaderActions>
+        <button type="submit" form="time-entry-form" class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save")</button>
+        <button type="button" class="btn btn-quiet" disabled="@saving" @onclick="SaveAndSubmit">Submit</button>
+        @if (editId.HasValue) { <button type="button" class="btn btn-danger-soft" disabled="@saving" @onclick="() => BeginDelete([editId.Value])">Delete</button> }
+    </HeaderActions>
+    <ChildContent>
     @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
-    <EditForm Model="input" OnValidSubmit="Save" FormName="time-entry-form">
+    <EditForm id="time-entry-form" Model="input" OnValidSubmit="Save" FormName="time-entry-form">
         <DataAnnotationsValidator /><ValidationSummary />
-        <div class="field-grid">
+        <div class="field-grid time-entry-edit-grid">
             <div class="field"><label for="time-project">Project</label><PortalSelect TValue="Guid" Id="time-project" MenuLabel="Time entry project" Searchable="true" Options="ProjectOptions" @bind-Value="input.ProjectId" @bind-Value:after="LoadWorkItems" /></div>
             <div class="field"><label for="time-work">Work item (optional)</label><PortalSelect TValue="NullableGuid" Id="time-work" MenuLabel="Time entry work item" Searchable="true" Options="WorkItemOptions" @bind-Value="input.WorkItemId" /></div>
             <div class="field"><label for="time-date">Work date</label><PortalDatePicker TValue="DateOnly" Id="time-date" @bind-Value="input.WorkDate" /></div>
             <div class="field"><label for="time-hours">Hours</label><InputNumber id="time-hours" class="form-control" step="0.25" @bind-Value="input.Hours" /><ValidationMessage For="() => input.Hours" /></div>
             <div class="field wide"><label for="time-description">What was completed?</label><InputTextArea id="time-description" class="form-control" @bind-Value="input.Description" /><ValidationMessage For="() => input.Description" /></div>
         </div>
-        <div class="head-actions"><button class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save draft")</button><button type="button" class="btn btn-quiet" @onclick="Cancel">Cancel</button></div>
     </EditForm>
+    </ChildContent>
 </PortalModal>
 
 <section class="panel">
-    <div class="toolbar">
-        <div class="filter-bar">
-            <PortalDatePicker TValue="NullableDateOnly" @bind-Value="from" aria-label="From date" />
-            <PortalDatePicker TValue="NullableDateOnly" @bind-Value="through" aria-label="Through date" />
-            <PortalSelect TValue="string" Options="TimeEntryStatusFilterOptions" @bind-Value="statusFilter" aria-label="Status" />
-            <button class="btn btn-quiet" @onclick="ApplyFilters">Apply</button>
-        </div>
-        <strong>@TotalHours.ToString("0.##") hours shown</strong>
-    </div>
+    <div class="toolbar"><div class="filter-bar"><input class="form-control" placeholder="Search reference, project, or description" @bind="search" @bind:event="oninput" aria-label="Search time entries" /><PortalDatePicker TValue="NullableDateOnly" @bind-Value="from" aria-label="From date" /><PortalDatePicker TValue="NullableDateOnly" @bind-Value="through" aria-label="Through date" /><PortalSelect TValue="string" Options="TimeEntryStatusFilterOptions" @bind-Value="statusFilter" aria-label="Status" /><button class="btn btn-quiet" @onclick="ApplyFilters">Apply</button></div><strong>@TotalHours.ToString("0.##") hours shown</strong></div>
     @if (result is null) { <LoadingState /> }
     else if (result.Items.Count == 0) { <EmptyState Title="No time entries here" Description="Record a draft or adjust the period and status filters." /> }
     else
     {
+        @if (selectedIds.Count > 0) { <div class="selection-toolbar"><strong>@selectedIds.Count draft@(selectedIds.Count == 1 ? "" : "s") selected</strong><button type="button" class="btn btn-danger-soft btn-sm" @onclick="() => BeginDelete(selectedIds)">Delete selected</button><button type="button" class="btn btn-quiet btn-sm" @onclick="ClearSelection">Clear</button></div> }
         <div class="table-shell">
-            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
-                <PropertyColumn Property="x => x.WorkDate" Title="Date" Format="yyyy-MM-dd" Class="cell-date" />
-                <TemplateColumn Title="Project"><strong>@context.ProjectName</strong><div class="muted">@context.WorkItemTitle</div></TemplateColumn>
-                <PropertyColumn Property="x => x.Description" Title="Description" />
-                <PropertyColumn Property="x => x.Hours" Title="Hours" Format="0.##" Class="cell-number" />
-                <TemplateColumn Title="Status" Class="cell-status"><StatusPill Value="@context.Status" />@if (context.ReviewComment is not null) { <div class="muted">@context.ReviewComment</div> }</TemplateColumn>
-                <TemplateColumn Title="" Class="cell-actions">
-                    <div class="head-actions">
-                        @if (context.Status == TimeEntryStatus.Draft)
-                        {
-                            <button class="btn btn-quiet btn-sm" @onclick="() => Edit(context.Id)">Edit</button>
-                            <button class="btn btn-primary btn-sm" @onclick="() => BeginSubmit(context.Id)">Submit</button>
-                            <button class="btn btn-danger-soft btn-sm" @onclick="() => BeginDelete(context.Id)">Delete</button>
-                        }
-                        else if (context.Status == TimeEntryStatus.Rejected)
-                        {
-                            <button class="btn btn-quiet btn-sm" @onclick="() => Reopen(context.Id)">Return to draft</button>
-                        }
-                    </div>
-                </TemplateColumn>
+            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
+                <TemplateColumn Class="cell-select"><HeaderTemplate><input type="checkbox" aria-label="Select all deletable drafts on this page" checked="@AllDraftsSelected" disabled="@(DraftsOnPage.Count == 0)" @onchange="ToggleAllDrafts" /></HeaderTemplate><ChildContent><input type="checkbox" aria-label="Select @context.Reference" checked="@selectedIds.Contains(context.Id)" disabled="@(context.Status != TimeEntryStatus.Draft)" @onchange="args => ToggleSelection(context.Id, args)" @onclick:stopPropagation="true" /></ChildContent></TemplateColumn>
+                <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference"><div class="row-open-target" @onclick="() => Open(context)">@context.Reference</div></TemplateColumn>
+                <TemplateColumn Title="Date" SortBy="@sortByDate" Class="cell-date"><div class="row-open-target" @onclick="() => Open(context)">@context.WorkDate.ToString("yyyy-MM-dd")</div></TemplateColumn>
+                <TemplateColumn Title="Project" SortBy="@sortByProject"><div class="row-open-target row-open-stack" @onclick="() => Open(context)"><strong>@context.ProjectReference · @context.ProjectName</strong><div class="muted">@(context.WorkItemReference is null ? context.WorkItemTitle : $"{context.WorkItemReference} · {context.WorkItemTitle}")</div></div></TemplateColumn>
+                <TemplateColumn Title="Description" SortBy="@sortByDescription"><div class="row-open-target" @onclick="() => Open(context)">@context.Description</div></TemplateColumn>
+                <TemplateColumn Title="Hours" SortBy="@sortByHours" Class="cell-number"><div class="row-open-target" @onclick="() => Open(context)">@context.Hours.ToString("0.##")</div></TemplateColumn>
+                <TemplateColumn Title="Status" SortBy="@sortByStatus" Class="cell-status"><div class="row-open-target" @onclick="() => Open(context)"><StatusPill Value="@context.Status" /></div></TemplateColumn>
             </QuickGrid>
         </div>
         <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
@@ -89,74 +68,87 @@
     private PageResult<TimeEntryListItem>? result;
     private IReadOnlyList<LookupItem<Guid>> projects = [];
     private IReadOnlyList<LookupItem<Guid>> workItems = [];
+    private IReadOnlyList<LookupItem<string>> managers = [];
     private TimeEntryInput input = new();
     private Guid? editId;
     private DateOnly? from = DateOnly.FromDateTime(DateTime.Today).AddMonths(-1);
     private DateOnly? through = DateOnly.FromDateTime(DateTime.Today);
     private string statusFilter = "";
+    private string? search;
     private string? error;
     private bool editing;
     private bool saving;
     private bool processingConfirmation;
+    private bool pendingSubmitNeedsReopen;
     private Guid? pendingSubmitId;
-    private Guid? pendingDeleteId;
+    private string? submitManagerId;
+    private IReadOnlyCollection<Guid> pendingDeleteIds = [];
+    private Guid? detailsId;
+    private readonly HashSet<Guid> selectedIds = [];
     private int page = 1;
     private int pageSize = 20;
-    private IReadOnlyList<PortalSelectOption<Guid>> ProjectOptions => projects
-        .Select(item => new PortalSelectOption<Guid>(item.Id, item.Name))
-        .Prepend(new(Guid.Empty, "Choose a project"))
-        .ToArray();
-    private IReadOnlyList<PortalSelectOption<Guid?>> WorkItemOptions => workItems
-        .Select(item => new PortalSelectOption<Guid?>((Guid?)item.Id, item.Name))
-        .Prepend(new(null, "No work item"))
-        .ToArray();
-    private static readonly IReadOnlyList<PortalSelectOption<string>> TimeEntryStatusFilterOptions = Enum.GetValues<TimeEntryStatus>()
-        .Select(value => new PortalSelectOption<string>(value.ToString(), value.ToString()))
-        .Prepend(new("", "All statuses"))
-        .ToArray();
+    private static readonly GridSort<TimeEntryListItem> sortByNumber = GridSort<TimeEntryListItem>.ByAscending(x => x.Number);
+    private static readonly GridSort<TimeEntryListItem> sortByDate = GridSort<TimeEntryListItem>.ByAscending(x => x.WorkDate);
+    private static readonly GridSort<TimeEntryListItem> sortByProject = GridSort<TimeEntryListItem>.ByAscending(x => x.ProjectName);
+    private static readonly GridSort<TimeEntryListItem> sortByDescription = GridSort<TimeEntryListItem>.ByAscending(x => x.Description);
+    private static readonly GridSort<TimeEntryListItem> sortByHours = GridSort<TimeEntryListItem>.ByAscending(x => x.Hours);
+    private static readonly GridSort<TimeEntryListItem> sortByStatus = GridSort<TimeEntryListItem>.ByAscending(x => x.Status);
+    private IReadOnlyList<TimeEntryListItem> DraftsOnPage => result?.Items.Where(x => x.Status == TimeEntryStatus.Draft).ToArray() ?? [];
+    private bool AllDraftsSelected => DraftsOnPage.Count > 0 && DraftsOnPage.All(x => selectedIds.Contains(x.Id));
+    private string DeleteMessage => pendingDeleteIds.Count == 1 ? "Delete this draft permanently?" : $"Delete {pendingDeleteIds.Count} selected drafts permanently?";
+    private IReadOnlyList<PortalSelectOption<Guid>> ProjectOptions => projects.Select(item => new PortalSelectOption<Guid>(item.Id, item.Name)).Prepend(new(Guid.Empty, "Choose a project")).ToArray();
+    private IReadOnlyList<PortalSelectOption<Guid?>> WorkItemOptions => workItems.Select(item => new PortalSelectOption<Guid?>((Guid?)item.Id, item.Name)).Prepend(new(null, "No work item")).ToArray();
+    private IReadOnlyList<PortalSelectOption<string>> ManagerOptions => managers.Select(item => new PortalSelectOption<string>(item.Id, item.Name)).Prepend(new(null!, "Choose a manager")).ToArray();
+    private static readonly IReadOnlyList<PortalSelectOption<string>> TimeEntryStatusFilterOptions = Enum.GetValues<TimeEntryStatus>().Select(value => new PortalSelectOption<string>(value.ToString(), value.ToString())).Prepend(new("", "All statuses")).ToArray();
     private decimal TotalHours => result?.Items.Sum(x => x.Hours) ?? 0;
+    [SupplyParameterFromQuery(Name = "entry")] private Guid? RequestedEntryId { get; set; }
 
-    protected override async Task OnInitializedAsync() { projects = await ProjectService.LookupsAsync(true); await Load(); }
-    private async Task Load() => result = await TimeEntryService.MineAsync(new(page, pageSize), from, through, Enum.TryParse<TimeEntryStatus>(statusFilter, out var status) ? status : null);
+    protected override async Task OnInitializedAsync() { projects = await ProjectService.LookupsAsync(true); managers = await UserDirectory.ListManagersAsync(); await Load(); if (RequestedEntryId.HasValue) detailsId = RequestedEntryId; }
+    private async Task Load() { result = await TimeEntryService.MineAsync(new(page, pageSize, search, "number"), from, through, Enum.TryParse<TimeEntryStatus>(statusFilter, out var status) ? status : null); selectedIds.Clear(); }
     private async Task ApplyFilters() { page = 1; await Load(); }
     private async Task LoadWorkItems() => workItems = input.ProjectId == Guid.Empty ? [] : await WorkItemService.LookupsAsync(input.ProjectId);
     private void Create() { input = new(); editId = null; workItems = []; editing = true; error = null; }
     private async Task Edit(Guid id) { error = null; input = await TimeEntryService.GetAsync(id); editId = id; await LoadWorkItems(); editing = true; }
+    private Task EditFromDetails(TimeEntryDetails details) => Edit(details.Id);
     private void Cancel() { editing = false; error = null; }
+    private async Task Open(TimeEntryListItem item) { if (item.Status == TimeEntryStatus.Draft) await Edit(item.Id); else OpenDetails(item.Id); }
+    private void OpenDetails(Guid id) { error = null; detailsId = id; }
+    private void CloseDetails() => detailsId = null;
     private async Task ChangePage(int value) { page = value; await Load(); }
     private async Task ChangePageSize(int value) { pageSize = value; page = 1; await Load(); }
-    private async Task Save()
-    {
-        saving = true; error = null;
-        try { await TimeEntryService.SaveDraftAsync(editId, input); editing = false; Toasts.Success("Draft saved", $"{input.Hours:0.##}h on {input.WorkDate:MMM d}."); await Load(); }
-        catch (Exception ex) { error = ex.Message; }
-        finally { saving = false; }
-    }
-    private void BeginSubmit(Guid id) { error = null; pendingSubmitId = id; }
-    private void BeginDelete(Guid id) { error = null; pendingDeleteId = id; }
-    private void CancelConfirmation() { pendingSubmitId = null; pendingDeleteId = null; }
+    private async Task Save() { saving = true; error = null; try { await TimeEntryService.SaveDraftAsync(editId, input); editing = false; Toasts.Success("Draft saved", $"{input.Hours:0.##}h on {input.WorkDate:MMM d}."); await Load(); } catch (Exception ex) { error = ex.Message; } finally { saving = false; } }
+    private async Task SaveAndSubmit() { saving = true; error = null; try { pendingSubmitId = await TimeEntryService.SaveDraftAsync(editId, input); submitManagerId = null; pendingSubmitNeedsReopen = false; editing = false; Toasts.Success("Draft saved", "Choose a manager to submit it for review."); await Load(); } catch (Exception ex) { error = ex.Message; } finally { saving = false; } }
+    private void SubmitFromDetails(TimeEntryDetails details) => BeginSubmit(details.Id);
+    private void DeleteFromDetails(TimeEntryDetails details) => BeginDelete([details.Id]);
+    private void ResubmitFromDetails(TimeEntryDetails details) { error = null; editing = false; submitManagerId = null; pendingSubmitNeedsReopen = true; pendingSubmitId = details.Id; }
+    private void BeginSubmit(Guid id) { error = null; editing = false; submitManagerId = null; pendingSubmitNeedsReopen = false; pendingSubmitId = id; }
+    private void BeginDelete(IEnumerable<Guid> ids) { error = null; editing = false; pendingDeleteIds = ids.Distinct().ToArray(); }
+    private void CancelConfirmation() { pendingSubmitId = null; submitManagerId = null; pendingSubmitNeedsReopen = false; pendingDeleteIds = []; }
     private async Task ConfirmSubmit()
     {
-        if (!pendingSubmitId.HasValue) return;
+        if (!pendingSubmitId.HasValue || string.IsNullOrWhiteSpace(submitManagerId)) return;
         processingConfirmation = true;
+        error = null;
         try
         {
-            await Run(() => TimeEntryService.SubmitAsync(pendingSubmitId.Value), "Time entry submitted.");
+            var id = pendingSubmitId.Value;
+            if (pendingSubmitNeedsReopen)
+            {
+                await TimeEntryService.ReopenAsync(id);
+                pendingSubmitNeedsReopen = false;
+            }
+            await TimeEntryService.SubmitAsync(id, submitManagerId);
+            Toasts.Success("Time entry submitted.");
             pendingSubmitId = null;
+            submitManagerId = null;
+            await Load();
         }
+        catch (Exception ex) { error = ex.Message; }
         finally { processingConfirmation = false; }
     }
-    private async Task ConfirmDelete()
-    {
-        if (!pendingDeleteId.HasValue) return;
-        processingConfirmation = true;
-        try
-        {
-            await Run(() => TimeEntryService.DeleteDraftAsync(pendingDeleteId.Value), "Draft deleted.");
-            pendingDeleteId = null;
-        }
-        finally { processingConfirmation = false; }
-    }
-    private Task Reopen(Guid id) => Run(() => TimeEntryService.ReopenAsync(id), "Rejected entry returned to draft.");
+    private async Task ConfirmDelete() { if (pendingDeleteIds.Count == 0) return; processingConfirmation = true; try { var count = pendingDeleteIds.Count; await Run(() => TimeEntryService.DeleteDraftsAsync(pendingDeleteIds), count == 1 ? "Draft deleted." : $"{count} drafts deleted."); pendingDeleteIds = []; selectedIds.Clear(); } finally { processingConfirmation = false; } }
     private async Task Run(Func<Task> operation, string success) { try { error = null; await operation(); Toasts.Success(success); await Load(); } catch (Exception ex) { error = ex.Message; } }
+    private void ToggleSelection(Guid id, ChangeEventArgs args) { if (args.Value is true) selectedIds.Add(id); else selectedIds.Remove(id); }
+    private void ToggleAllDrafts(ChangeEventArgs args) { if (args.Value is true) selectedIds.UnionWith(DraftsOnPage.Select(x => x.Id)); else selectedIds.ExceptWith(DraftsOnPage.Select(x => x.Id)); }
+    private void ClearSelection() => selectedIds.Clear();
 }

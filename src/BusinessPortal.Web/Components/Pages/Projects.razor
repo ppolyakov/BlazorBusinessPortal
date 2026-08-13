@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject IProjectService ProjectService
 @inject IClientService ClientService
+@inject ICurrentUser CurrentUser
 @inject ToastService Toasts
 
 <PageTitle>Projects · Vela</PageTitle>
@@ -9,11 +10,37 @@
     <Actions><AuthorizeView Roles="@PortalRoles.Management"><button class="btn btn-primary" @onclick="Create">New project</button></AuthorizeView></Actions>
 </PageHeader>
 
-@if (error is not null && !editing) { <div class="alert alert-danger" role="alert">@error</div> }
+@if (error is not null && !modalOpen) { <div class="alert alert-danger" role="alert">@error</div> }
 
-<PortalModal Visible="editing" Title="@(editId.HasValue ? "Edit project" : "Create project")" Closed="Cancel">
+<ConfirmationModal Visible="@(pendingDeleteIds.Count > 0)" Title="Delete project" Message="@DeleteMessage" ConfirmText="Delete" Destructive="true" Busy="deleting" Confirmed="ConfirmDelete" Cancelled="CancelDelete" />
+
+<PortalModal Visible="modalOpen" Title="@ModalTitle" Closed="Cancel">
+    <HeaderActions>
+        @if (editing)
+        {
+            <button type="submit" form="project-form" class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save")</button>
+            @if (selectedProject is not null) { <a class="btn btn-quiet" href="@($"work-items?project={selectedProject.Id}")">Open tasks</a> }
+            @if (editId.HasValue && selectedProject is not null) { <button type="button" class="btn btn-danger-soft" @onclick="() => BeginDelete([selectedProject.Id])">Delete</button> }
+        }
+    </HeaderActions>
+    <ChildContent>
     @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
-        <EditForm Model="input" OnValidSubmit="Save" FormName="project-form">
+    @if (!editing && selectedProject is not null)
+    {
+        <div class="entity-detail">
+            <div class="entity-detail-heading"><div><span class="cell-reference">@selectedProject.Reference</span><h2>@selectedProject.Name</h2><p>@selectedProject.Code · @selectedProject.ClientName</p></div><StatusPill Value="@selectedProject.Status" /></div>
+            <div class="time-entry-summary-grid">
+                <div><span>Budget</span><strong>@selectedProject.BudgetHours.ToString("0.#")h</strong></div>
+                <div><span>Approved time</span><strong>@selectedProject.UsedHours.ToString("0.#")h</strong></div>
+                <div><span>Starts</span><strong>@selectedProject.StartDate.ToString("dd MMM yyyy")</strong></div>
+                <div><span>Ends</span><strong>@(selectedProject.EndDate?.ToString("dd MMM yyyy") ?? "Not set")</strong></div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(input.Description)) { <section class="time-entry-description"><span>Description</span><p>@input.Description</p></section> }
+        </div>
+    }
+    else if (editing)
+    {
+        <EditForm id="project-form" Model="input" OnValidSubmit="Save" FormName="project-form">
             <DataAnnotationsValidator /><ValidationSummary />
             <div class="field-grid">
                 <div class="field"><label for="project-client">Client</label><PortalSelect TValue="Guid" Id="project-client" MenuLabel="Project client" Searchable="true" Options="ClientOptions" @bind-Value="input.ClientId" /></div>
@@ -25,35 +52,29 @@
                 <div class="field"><label for="project-end">End date</label><PortalDatePicker TValue="NullableDateOnly" Id="project-end" @bind-Value="input.EndDate" /><ValidationMessage For="() => input.EndDate" /></div>
                 <div class="field wide"><label for="project-description">Description</label><InputTextArea id="project-description" class="form-control" @bind-Value="input.Description" /></div>
             </div>
-            <div class="head-actions"><button class="btn btn-primary" disabled="@saving">@(saving ? "Saving…" : "Save project")</button><button type="button" class="btn btn-quiet" @onclick="Cancel">Cancel</button></div>
         </EditForm>
+    }
+    </ChildContent>
 </PortalModal>
 
 <section class="panel">
-    <div class="toolbar">
-        <div class="filter-bar">
-            <input class="form-control" placeholder="Search name or code" @bind="search" aria-label="Search projects" />
-            <PortalSelect TValue="string" Options="ProjectStatusFilterOptions" @bind-Value="statusFilter" aria-label="Filter by status" />
-            <button class="btn btn-quiet" @onclick="ApplyFilters">Apply</button>
-        </div>
-        <span class="muted">Budget uses approved time</span>
-    </div>
+    <div class="toolbar"><div class="filter-bar"><input class="form-control" placeholder="Search reference, name, code, or client" @bind="search" @bind:event="oninput" aria-label="Search projects" /><PortalSelect TValue="string" Options="ProjectStatusFilterOptions" @bind-Value="statusFilter" aria-label="Filter by status" /><button class="btn btn-quiet" @onclick="ApplyFilters">Apply</button></div><span class="muted">Budget uses approved time</span></div>
     @if (result is null) { <LoadingState /> }
     else if (result.Items.Count == 0) { <EmptyState Title="No matching projects" Description="Adjust the filters or create a project." /> }
     else
     {
+        @if (canManage && selectedIds.Count > 0) { <div class="selection-toolbar"><strong>@selectedIds.Count selected</strong><button type="button" class="btn btn-danger-soft btn-sm" @onclick="() => BeginDelete(selectedIds)">Delete selected</button><button type="button" class="btn btn-quiet btn-sm" @onclick="ClearSelection">Clear</button></div> }
         <div class="table-shell">
-            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
-                <PropertyColumn Property="x => x.Code" Title="Code" />
-                <PropertyColumn Property="x => x.Name" Title="Project" />
-                <PropertyColumn Property="x => x.ClientName" Title="Client" />
-                <TemplateColumn Title="Status" Class="cell-status"><StatusPill Value="@context.Status" /></TemplateColumn>
-                <TemplateColumn Title="Budget" Class="cell-number">
-                    <div><strong>@context.UsedHours.ToString("0.#")</strong> / @context.BudgetHours.ToString("0.#")h</div>
-                    <div class="bar-track"><div class="bar-fill" style="width:@BudgetPercent(context)%"></div></div>
-                </TemplateColumn>
-                <PropertyColumn Property="x => x.EndDate" Title="Ends" Format="yyyy-MM-dd" Class="cell-date" />
-                <TemplateColumn Title="" Context="project" Class="cell-actions"><div class="head-actions"><a class="btn btn-quiet btn-sm" href="@($"work-items?project={project.Id}")">Tasks</a><AuthorizeView Roles="@PortalRoles.Management" Context="authState"><button class="btn btn-quiet btn-sm" @onclick="() => Edit(project.Id)">Edit</button></AuthorizeView></div></TemplateColumn>
+            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
+                @if (canManage) { <TemplateColumn Class="cell-select"><HeaderTemplate><input type="checkbox" aria-label="Select all projects on this page" checked="@AllPageSelected" @onchange="ToggleAll" /></HeaderTemplate><ChildContent><input type="checkbox" aria-label="Select @context.Reference" checked="@selectedIds.Contains(context.Id)" @onchange="args => ToggleSelection(context.Id, args)" @onclick:stopPropagation="true" /></ChildContent></TemplateColumn> }
+                <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference"><div class="row-open-target" @onclick="() => Open(context)">@context.Reference</div></TemplateColumn>
+                <TemplateColumn Title="Code" SortBy="@sortByCode"><div class="row-open-target" @onclick="() => Open(context)"><strong class="project-code">@context.Code</strong></div></TemplateColumn>
+                <TemplateColumn Title="Project" SortBy="@sortByName"><div class="row-open-target" @onclick="() => Open(context)">@context.Name</div></TemplateColumn>
+                <TemplateColumn Title="Client" SortBy="@sortByClient"><div class="row-open-target" @onclick="() => Open(context)">@context.ClientName</div></TemplateColumn>
+                <TemplateColumn Title="Status" SortBy="@sortByStatus" Class="cell-status"><div class="row-open-target" @onclick="() => Open(context)"><StatusPill Value="@context.Status" /></div></TemplateColumn>
+                <TemplateColumn Title="Budget" SortBy="@sortByBudget" Class="cell-number"><div class="row-open-target row-open-stack" @onclick="() => Open(context)"><div><strong>@context.UsedHours.ToString("0.#")</strong> / @context.BudgetHours.ToString("0.#")h</div><div class="bar-track"><div class="bar-fill" style="width:@BudgetPercent(context)%"></div></div></div></TemplateColumn>
+                <TemplateColumn Title="Ends" SortBy="@sortByEnd" Class="cell-date"><div class="row-open-target" @onclick="() => Open(context)">@(context.EndDate?.ToString("yyyy-MM-dd") ?? "—")</div></TemplateColumn>
+                <TemplateColumn Title="" Context="project" Class="cell-actions"><a class="btn btn-quiet btn-sm" href="@($"work-items?project={project.Id}")">Tasks</a></TemplateColumn>
             </QuickGrid>
         </div>
         <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
@@ -69,35 +90,43 @@
     private string statusFilter = "";
     private string? error;
     private bool editing;
+    private bool modalOpen;
+    private bool canManage;
     private bool saving;
+    private bool deleting;
+    private ProjectListItem? selectedProject;
+    private readonly HashSet<Guid> selectedIds = [];
+    private IReadOnlyCollection<Guid> pendingDeleteIds = [];
     private int page = 1;
     private int pageSize = 20;
-    private IReadOnlyList<PortalSelectOption<Guid>> ClientOptions => clients
-        .Select(item => new PortalSelectOption<Guid>(item.Id, item.Name, item.ContactName))
-        .Prepend(new(Guid.Empty, "Choose a client"))
-        .ToArray();
-    private static readonly IReadOnlyList<PortalSelectOption<ProjectStatus>> ProjectStatusOptions = Enum.GetValues<ProjectStatus>()
-        .Select(value => new PortalSelectOption<ProjectStatus>(value, value.ToString()))
-        .ToArray();
-    private static readonly IReadOnlyList<PortalSelectOption<string>> ProjectStatusFilterOptions = Enum.GetValues<ProjectStatus>()
-        .Select(value => new PortalSelectOption<string>(value.ToString(), value.ToString()))
-        .Prepend(new("", "All statuses"))
-        .ToArray();
+    private static readonly GridSort<ProjectListItem> sortByNumber = GridSort<ProjectListItem>.ByAscending(x => x.Number);
+    private static readonly GridSort<ProjectListItem> sortByCode = GridSort<ProjectListItem>.ByAscending(x => x.Code);
+    private static readonly GridSort<ProjectListItem> sortByName = GridSort<ProjectListItem>.ByAscending(x => x.Name);
+    private static readonly GridSort<ProjectListItem> sortByClient = GridSort<ProjectListItem>.ByAscending(x => x.ClientName);
+    private static readonly GridSort<ProjectListItem> sortByStatus = GridSort<ProjectListItem>.ByAscending(x => x.Status);
+    private static readonly GridSort<ProjectListItem> sortByBudget = GridSort<ProjectListItem>.ByAscending(x => x.UsedHours);
+    private static readonly GridSort<ProjectListItem> sortByEnd = GridSort<ProjectListItem>.ByAscending(x => x.EndDate);
+    private bool AllPageSelected => result is { Items.Count: > 0 } && result.Items.All(x => selectedIds.Contains(x.Id));
+    private string ModalTitle => selectedProject is null ? "Create project" : editing ? $"Edit {selectedProject.Reference}" : $"{selectedProject.Reference} · Project";
+    private string DeleteMessage => pendingDeleteIds.Count == 1 ? "Delete this project? Projects with related work cannot be deleted." : $"Delete {pendingDeleteIds.Count} selected projects? Projects with related work cannot be deleted.";
+    private IReadOnlyList<PortalSelectOption<Guid>> ClientOptions => clients.Select(item => new PortalSelectOption<Guid>(item.Id, item.Name, item.ContactName)).Prepend(new(Guid.Empty, "Choose a client")).ToArray();
+    private static readonly IReadOnlyList<PortalSelectOption<ProjectStatus>> ProjectStatusOptions = Enum.GetValues<ProjectStatus>().Select(value => new PortalSelectOption<ProjectStatus>(value, value.ToString())).ToArray();
+    private static readonly IReadOnlyList<PortalSelectOption<string>> ProjectStatusFilterOptions = Enum.GetValues<ProjectStatus>().Select(value => new PortalSelectOption<string>(value.ToString(), value.ToString())).Prepend(new("", "All statuses")).ToArray();
 
-    protected override async Task OnInitializedAsync() { clients = (await ClientService.SearchAsync(new(1, 100))).Items; await Load(); }
-    private async Task Load() => result = await ProjectService.SearchAsync(new(page, pageSize, search), status: Enum.TryParse<ProjectStatus>(statusFilter, out var status) ? status : null);
+    protected override async Task OnInitializedAsync() { canManage = (await CurrentUser.GetAsync()).CanManage; clients = (await ClientService.SearchAsync(new(1, 100))).Items; await Load(); }
+    private async Task Load() { result = await ProjectService.SearchAsync(new(page, pageSize, search, "number"), status: Enum.TryParse<ProjectStatus>(statusFilter, out var status) ? status : null); selectedIds.Clear(); }
     private async Task ApplyFilters() { page = 1; await Load(); }
-    private void Create() { input = new(); editId = null; editing = true; error = null; }
-    private async Task Edit(Guid id) { error = null; input = await ProjectService.GetAsync(id); editId = id; editing = true; }
-    private void Cancel() { editing = false; error = null; }
+    private void Create() { input = new(); editId = null; selectedProject = null; editing = true; modalOpen = true; error = null; }
+    private async Task Open(ProjectListItem project) { error = null; input = await ProjectService.GetAsync(project.Id); editId = project.Id; selectedProject = project; editing = canManage; modalOpen = true; }
+    private void Cancel() { modalOpen = false; editing = false; selectedProject = null; error = null; }
     private async Task ChangePage(int value) { page = value; await Load(); }
     private async Task ChangePageSize(int value) { pageSize = value; page = 1; await Load(); }
     private static string BudgetPercent(ProjectListItem item) => Math.Min(100, item.BudgetHours <= 0 ? 0 : item.UsedHours / item.BudgetHours * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture);
-    private async Task Save()
-    {
-        saving = true; error = null;
-        try { await ProjectService.SaveAsync(editId, input); editing = false; Toasts.Success("Project saved", $"{input.Code} · {input.Name} is up to date."); await Load(); }
-        catch (Exception ex) { error = ex.Message; }
-        finally { saving = false; }
-    }
+    private async Task Save() { saving = true; error = null; try { await ProjectService.SaveAsync(editId, input); modalOpen = false; editing = false; selectedProject = null; Toasts.Success("Project saved", $"{input.Code} · {input.Name} is up to date."); await Load(); } catch (Exception ex) { error = ex.Message; } finally { saving = false; } }
+    private void ToggleSelection(Guid id, ChangeEventArgs args) { if (args.Value is true) selectedIds.Add(id); else selectedIds.Remove(id); }
+    private void ToggleAll(ChangeEventArgs args) { if (result is null) return; if (args.Value is true) selectedIds.UnionWith(result.Items.Select(x => x.Id)); else selectedIds.ExceptWith(result.Items.Select(x => x.Id)); }
+    private void ClearSelection() => selectedIds.Clear();
+    private void BeginDelete(IEnumerable<Guid> ids) { pendingDeleteIds = ids.Distinct().ToArray(); modalOpen = false; }
+    private void CancelDelete() => pendingDeleteIds = [];
+    private async Task ConfirmDelete() { deleting = true; error = null; try { var count = pendingDeleteIds.Count; await ProjectService.DeleteAsync(pendingDeleteIds); pendingDeleteIds = []; selectedIds.Clear(); Toasts.Success(count == 1 ? "Project deleted" : "Projects deleted", $"{count} project{(count == 1 ? "" : "s")} removed."); await Load(); } catch (Exception ex) { error = ex.Message; pendingDeleteIds = []; } finally { deleting = false; } }
 }

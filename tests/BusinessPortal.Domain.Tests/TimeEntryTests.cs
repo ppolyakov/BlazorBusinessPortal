@@ -61,20 +61,20 @@ public sealed class TimeEntryTests
     }
 
     [Fact]
-    public void Rejection_requires_comment()
+    public void Return_requires_comment()
     {
         var entry = Create();
         entry.Submit(DateTime.UtcNow);
-        Assert.Throws<DomainException>(() => entry.Reject("reviewer", " ", DateTime.UtcNow));
+        Assert.Throws<DomainException>(() => entry.Return("reviewer", " ", DateTime.UtcNow));
     }
 
     [Fact]
-    public void Rejected_entry_can_return_to_draft_and_be_resubmitted()
+    public void Returned_entry_can_return_to_draft_and_be_resubmitted()
     {
         var entry = Create();
         entry.Submit(DateTime.UtcNow);
-        entry.Reject("reviewer", "Add detail.", DateTime.UtcNow);
-        entry.ReopenRejected(DateTime.UtcNow);
+        entry.Return("reviewer", "Add detail.", DateTime.UtcNow);
+        entry.ReopenReturned(DateTime.UtcNow);
         entry.Submit(DateTime.UtcNow);
         Assert.Equal(TimeEntryStatus.Submitted, entry.Status);
         Assert.Null(entry.ReviewedByUserId);
@@ -86,7 +86,7 @@ public sealed class TimeEntryTests
         var entry = Create();
         entry.Submit(DateTime.UtcNow);
         entry.Approve("reviewer", DateTime.UtcNow);
-        Assert.Throws<DomainException>(() => entry.ReopenRejected(DateTime.UtcNow));
+        Assert.Throws<DomainException>(() => entry.ReopenReturned(DateTime.UtcNow));
     }
 
     private static TimeEntry Create(decimal hours = 8) => new()

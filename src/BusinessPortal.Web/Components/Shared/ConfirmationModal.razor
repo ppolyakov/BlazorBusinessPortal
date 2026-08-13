@@ -6,7 +6,6 @@
                 class="@(Destructive ? "btn btn-danger-soft" : "btn btn-primary")"
                 disabled="@Busy"
                 @onclick="ConfirmAsync">@(Busy ? "Working…" : ConfirmText)</button>
-        <button type="button" class="btn btn-quiet" disabled="@Busy" @onclick="CancelAsync">@CancelText</button>
     </div>
 </PortalModal>
 
@@ -15,7 +14,6 @@
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter, EditorRequired] public string Message { get; set; } = "";
     [Parameter] public string ConfirmText { get; set; } = "Confirm";
-    [Parameter] public string CancelText { get; set; } = "Cancel";
     [Parameter] public bool Destructive { get; set; }
     [Parameter] public bool Busy { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }

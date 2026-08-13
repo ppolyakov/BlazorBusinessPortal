@@ -20,7 +20,13 @@ internal sealed class DashboardService(IDbContextFactory<ApplicationDbContext> f
         var activeClients = await db.Clients.CountAsync(x => x.OrganizationId == user.OrganizationId && x.Status == ClientStatus.Active, cancellationToken);
         var activeProjects = await db.Projects.CountAsync(x => x.OrganizationId == user.OrganizationId && x.Status == ProjectStatus.Active, cancellationToken);
         var monthHours = await db.TimeEntries.Where(x => x.OrganizationId == user.OrganizationId && x.WorkDate >= monthStart && x.WorkDate < monthEnd).SumAsync(x => (decimal?)x.Hours, cancellationToken) ?? 0;
-        var awaiting = user.CanManage ? await db.TimeEntries.CountAsync(x => x.OrganizationId == user.OrganizationId && x.Status == TimeEntryStatus.Submitted && x.UserId != user.UserId, cancellationToken) : 0;
+        var awaitingQuery = db.TimeEntries.Where(x =>
+            x.OrganizationId == user.OrganizationId
+            && x.Status == TimeEntryStatus.Submitted
+            && x.UserId != user.UserId);
+        if (user.CanManage && !user.IsInRole(PortalRoles.Administrator))
+            awaitingQuery = awaitingQuery.Where(x => x.SubmittedToUserId == user.UserId);
+        var awaiting = user.CanManage ? await awaitingQuery.CountAsync(cancellationToken) : 0;
         var chart = await (from entry in db.TimeEntries.AsNoTracking()
                            join project in db.Projects.AsNoTracking() on entry.ProjectId equals project.Id
                            where entry.OrganizationId == user.OrganizationId && entry.WorkDate >= monthStart && entry.WorkDate < monthEnd
@@ -47,7 +53,7 @@ internal sealed class DashboardService(IDbContextFactory<ApplicationDbContext> f
                               join assigned in db.Users.AsNoTracking() on item.AssignedToUserId equals assigned.Id into assignments
                               from assigned in assignments.DefaultIfEmpty()
                               where item.OrganizationId == user.OrganizationId && item.Status != WorkItemStatus.Done && item.DueDate >= today
-                              orderby item.DueDate
+                              orderby item.Number
                               select new WorkItemListItem(
                                   item.Id,
                                   project.Id,
@@ -59,7 +65,9 @@ internal sealed class DashboardService(IDbContextFactory<ApplicationDbContext> f
                                   assigned == null ? null : assigned.DisplayName,
                                   item.DueDate,
                                   item.EstimatedHours,
-                                  assigned == null || assigned.AvatarImage == null ? null : "/avatars/" + assigned.Id))
+                                  assigned == null || assigned.AvatarImage == null ? null : "/avatars/" + assigned.Id,
+                                  item.Number,
+                                  project.Number))
                               .Take(6).ToListAsync(cancellationToken);
         return new(activeClients, activeProjects, monthHours, awaiting, chart, activity, upcoming);
     }
@@ -82,7 +90,8 @@ internal sealed class ReportService(IDbContextFactory<ApplicationDbContext> fact
             .Select(x => new ChartItem(x.Key, x.Sum(y => y.Entry.Hours))).Take(12).ToListAsync(cancellationToken);
         var pageSize = Math.Clamp(filter.PageSize, 1, 100);
         var page = Math.Max(1, filter.Page);
-        var rows = await query.OrderByDescending(x => x.Entry.WorkDate).ThenBy(x => x.Project.Name)
+        query = SortReportRows(query, filter);
+        var rows = await query
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(x => new ReportRow(
                 x.Entry.WorkDate,
@@ -93,7 +102,9 @@ internal sealed class ReportService(IDbContextFactory<ApplicationDbContext> fact
                 x.Entry.Description,
                 x.Entry.Status,
                 x.User.Id,
-                x.User.AvatarImage == null ? null : "/avatars/" + x.User.Id))
+                x.User.AvatarImage == null ? null : "/avatars/" + x.User.Id,
+                x.Entry.Number,
+                x.Project.Number))
             .ToListAsync(cancellationToken);
         return new(totals, new(rows, totalCount, page, pageSize), totalHours);
     }
@@ -114,13 +125,15 @@ internal sealed class ReportService(IDbContextFactory<ApplicationDbContext> fact
                 x.Entry.Description,
                 x.Entry.Status,
                 x.User.Id,
-                x.User.AvatarImage == null ? null : "/avatars/" + x.User.Id))
+                x.User.AvatarImage == null ? null : "/avatars/" + x.User.Id,
+                x.Entry.Number,
+                x.Project.Number))
             .ToListAsync(cancellationToken);
         if (rows.Count > MaximumExportRows) throw new ConflictException($"Export is limited to {MaximumExportRows:N0} rows. Narrow the filters.");
         var content = ExcelReportWriter.Create(rows, filter, user.OrganizationName);
         AddAudit(db, user, "ReportExported", "Report", $"{filter.From:yyyyMMdd}-{filter.To:yyyyMMdd}", $"Exported {rows.Count} filtered report rows.");
         await db.SaveChangesAsync(cancellationToken);
-        return (content, $"business-portal-report-{filter.From:yyyyMMdd}-{filter.To:yyyyMMdd}.xlsx");
+        return (content, $"vela-time-report-{filter.From:yyyyMMdd}-{filter.To:yyyyMMdd}.xlsx");
     }
 
     private static IQueryable<ReportQueryRow> BuildQuery(ApplicationDbContext db, Guid organizationId, ReportFilter filter)
@@ -135,8 +148,39 @@ internal sealed class ReportService(IDbContextFactory<ApplicationDbContext> fact
         if (filter.ClientId.HasValue) query = query.Where(x => x.Client.Id == filter.ClientId);
         if (filter.ProjectId.HasValue) query = query.Where(x => x.Project.Id == filter.ProjectId);
         if (filter.UserId is not null) query = query.Where(x => x.User.Id == filter.UserId);
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var term = filter.Search.Trim();
+            var hasNumber = PublicReference.TryParse(term, "TE", out var number);
+            query = query.Where(x => EF.Functions.ILike(x.Entry.Description, $"%{term}%")
+                || EF.Functions.ILike(x.Project.Name, $"%{term}%")
+                || EF.Functions.ILike(x.Client.Name, $"%{term}%")
+                || EF.Functions.ILike(x.User.DisplayName, $"%{term}%")
+                || (hasNumber && x.Entry.Number == number));
+        }
         return query;
     }
+
+    private static IQueryable<ReportQueryRow> SortReportRows(IQueryable<ReportQueryRow> query, ReportFilter filter) =>
+        (filter.Sort?.ToLowerInvariant(), filter.Descending) switch
+        {
+            ("number", true) => query.OrderByDescending(x => x.Entry.Number),
+            ("number", false) => query.OrderBy(x => x.Entry.Number),
+            ("date", false) => query.OrderBy(x => x.Entry.WorkDate).ThenBy(x => x.Entry.Number),
+            ("client", true) => query.OrderByDescending(x => x.Client.Name).ThenByDescending(x => x.Entry.Number),
+            ("client", false) => query.OrderBy(x => x.Client.Name).ThenBy(x => x.Entry.Number),
+            ("project", true) => query.OrderByDescending(x => x.Project.Name).ThenByDescending(x => x.Entry.Number),
+            ("project", false) => query.OrderBy(x => x.Project.Name).ThenBy(x => x.Entry.Number),
+            ("person", true) => query.OrderByDescending(x => x.User.DisplayName).ThenByDescending(x => x.Entry.Number),
+            ("person", false) => query.OrderBy(x => x.User.DisplayName).ThenBy(x => x.Entry.Number),
+            ("hours", true) => query.OrderByDescending(x => x.Entry.Hours).ThenByDescending(x => x.Entry.Number),
+            ("hours", false) => query.OrderBy(x => x.Entry.Hours).ThenBy(x => x.Entry.Number),
+            ("description", true) => query.OrderByDescending(x => x.Entry.Description),
+            ("description", false) => query.OrderBy(x => x.Entry.Description),
+            ("status", true) => query.OrderByDescending(x => x.Entry.Status).ThenByDescending(x => x.Entry.Number),
+            ("status", false) => query.OrderBy(x => x.Entry.Status).ThenBy(x => x.Entry.Number),
+            _ => query.OrderBy(x => x.Entry.Number)
+        };
 
     private sealed class ReportQueryRow
     {
@@ -184,7 +228,34 @@ internal sealed class AuditService(IDbContextFactory<ApplicationDbContext> facto
         if (from.HasValue) { var start = from.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc); query = query.Where(x => x.audit.OccurredAtUtc >= start); }
         if (through.HasValue) { var end = through.Value.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc); query = query.Where(x => x.audit.OccurredAtUtc < end); }
         var count = await query.CountAsync(cancellationToken);
-        var items = await query.OrderByDescending(x => x.audit.OccurredAtUtc).Skip((request.SafePage - 1) * request.SafePageSize).Take(request.SafePageSize)
+        query = (request.Sort?.ToLowerInvariant(), request.Descending) switch
+        {
+            ("number", true) => query.OrderByDescending(x =>
+                db.Clients.Where(entity => entity.OrganizationId == user.OrganizationId && entity.Id.ToString() == x.audit.EntityId).Select(entity => (int?)entity.Number).FirstOrDefault()
+                ?? db.Projects.Where(entity => entity.OrganizationId == user.OrganizationId && entity.Id.ToString() == x.audit.EntityId).Select(entity => (int?)entity.Number).FirstOrDefault()
+                ?? db.WorkItems.Where(entity => entity.OrganizationId == user.OrganizationId && entity.Id.ToString() == x.audit.EntityId).Select(entity => (int?)entity.Number).FirstOrDefault()
+                ?? db.TimeEntries.Where(entity => entity.OrganizationId == user.OrganizationId && entity.Id.ToString() == x.audit.EntityId).Select(entity => (int?)entity.Number).FirstOrDefault()
+                ?? 0).ThenByDescending(x => x.audit.EntityType),
+            ("number", false) => query.OrderBy(x =>
+                db.Clients.Where(entity => entity.OrganizationId == user.OrganizationId && entity.Id.ToString() == x.audit.EntityId).Select(entity => (int?)entity.Number).FirstOrDefault()
+                ?? db.Projects.Where(entity => entity.OrganizationId == user.OrganizationId && entity.Id.ToString() == x.audit.EntityId).Select(entity => (int?)entity.Number).FirstOrDefault()
+                ?? db.WorkItems.Where(entity => entity.OrganizationId == user.OrganizationId && entity.Id.ToString() == x.audit.EntityId).Select(entity => (int?)entity.Number).FirstOrDefault()
+                ?? db.TimeEntries.Where(entity => entity.OrganizationId == user.OrganizationId && entity.Id.ToString() == x.audit.EntityId).Select(entity => (int?)entity.Number).FirstOrDefault()
+                ?? int.MaxValue).ThenBy(x => x.audit.EntityType),
+            ("actor", true) => query.OrderByDescending(x => x.actor.DisplayName),
+            ("actor", false) => query.OrderBy(x => x.actor.DisplayName),
+            ("action", true) => query.OrderByDescending(x => x.audit.Action),
+            ("action", false) => query.OrderBy(x => x.audit.Action),
+            ("entity", true) => query.OrderByDescending(x => x.audit.EntityType),
+            ("entity", false) => query.OrderBy(x => x.audit.EntityType),
+            ("identifier", true) => query.OrderByDescending(x => x.audit.EntityId),
+            ("identifier", false) => query.OrderBy(x => x.audit.EntityId),
+            ("summary", true) => query.OrderByDescending(x => x.audit.Summary),
+            ("summary", false) => query.OrderBy(x => x.audit.Summary),
+            ("time", false) => query.OrderBy(x => x.audit.OccurredAtUtc),
+            _ => query.OrderByDescending(x => x.audit.OccurredAtUtc)
+        };
+        var items = await query.Skip((request.SafePage - 1) * request.SafePageSize).Take(request.SafePageSize)
             .Select(x => new AuditListItem(
                 x.audit.Id,
                 x.actor.DisplayName,
@@ -196,7 +267,31 @@ internal sealed class AuditService(IDbContextFactory<ApplicationDbContext> facto
                 x.actor.Id,
                 x.actor.AvatarImage == null ? null : "/avatars/" + x.actor.Id))
             .ToListAsync(cancellationToken);
+        var entityIds = items.Select(x => Guid.TryParse(x.EntityId, out var id) ? id : Guid.Empty).Where(x => x != Guid.Empty).Distinct().ToArray();
+        var projectNumbers = await db.Projects.AsNoTracking().Where(x => x.OrganizationId == user.OrganizationId && entityIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, cancellationToken);
+        var clientNumbers = await db.Clients.AsNoTracking().Where(x => x.OrganizationId == user.OrganizationId && entityIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, cancellationToken);
+        var workItemNumbers = await db.WorkItems.AsNoTracking().Where(x => x.OrganizationId == user.OrganizationId && entityIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, cancellationToken);
+        var timeEntryNumbers = await db.TimeEntries.AsNoTracking().Where(x => x.OrganizationId == user.OrganizationId && entityIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, cancellationToken);
+        items = items.Select(item => item with { EntityId = ResolvePublicIdentifier(item, clientNumbers, projectNumbers, workItemNumbers, timeEntryNumbers) }).ToList();
         return new(items, count, request.SafePage, request.SafePageSize);
+    }
+
+    private static string ResolvePublicIdentifier(
+        AuditListItem item,
+        Dictionary<Guid, int> clientNumbers,
+        Dictionary<Guid, int> projectNumbers,
+        Dictionary<Guid, int> workItemNumbers,
+        Dictionary<Guid, int> timeEntryNumbers)
+    {
+        if (!Guid.TryParse(item.EntityId, out var id)) return item.EntityId;
+        return item.EntityType switch
+        {
+            nameof(Client) when clientNumbers.TryGetValue(id, out var number) => PublicReference.Client(number),
+            nameof(Project) when projectNumbers.TryGetValue(id, out var number) => PublicReference.Project(number),
+            nameof(WorkItem) when workItemNumbers.TryGetValue(id, out var number) => PublicReference.WorkItem(number),
+            nameof(TimeEntry) when timeEntryNumbers.TryGetValue(id, out var number) => PublicReference.TimeEntry(number),
+            _ => item.EntityId
+        };
     }
 }
 
@@ -217,30 +312,33 @@ internal static class ExcelReportWriter
                 new SheetViews(new SheetView(new Pane { VerticalSplit = 4, TopLeftCell = "A5", ActivePane = PaneValues.BottomLeft, State = PaneStateValues.Frozen }) { WorkbookViewId = 0 }),
                 new Columns(
                     new Column { Min = 1, Max = 1, Width = 13, CustomWidth = true },
-                    new Column { Min = 2, Max = 4, Width = 24, CustomWidth = true },
-                    new Column { Min = 5, Max = 5, Width = 12, CustomWidth = true },
-                    new Column { Min = 6, Max = 6, Width = 48, CustomWidth = true },
-                    new Column { Min = 7, Max = 7, Width = 14, CustomWidth = true }),
+                    new Column { Min = 2, Max = 2, Width = 13, CustomWidth = true },
+                    new Column { Min = 3, Max = 6, Width = 24, CustomWidth = true },
+                    new Column { Min = 7, Max = 7, Width = 12, CustomWidth = true },
+                    new Column { Min = 8, Max = 8, Width = 48, CustomWidth = true },
+                    new Column { Min = 9, Max = 9, Width = 14, CustomWidth = true }),
                 sheetData);
             sheetData.Append(TextRow(1, [$"{organizationName} · Time report"], 1));
             sheetData.Append(TextRow(2, [$"Generated {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC"], 0));
             sheetData.Append(TextRow(3, [$"Filters: {filter.From:yyyy-MM-dd} to {filter.To:yyyy-MM-dd}"], 0));
-            sheetData.Append(TextRow(4, ["Date", "Client", "Project", "Employee", "Hours", "Description", "Status"], 1));
+            sheetData.Append(TextRow(4, ["Entry", "Date", "Client", "Project", "Project ref", "Employee", "Hours", "Description", "Status"], 1));
             uint index = 5;
             foreach (var row in rows)
             {
                 var excelDate = row.WorkDate.ToDateTime(TimeOnly.MinValue).ToOADate();
                 sheetData.Append(new Row(
+                    TextCell(PublicReference.TimeEntry(row.TimeEntryNumber)),
                     NumberCell(excelDate, 2),
                     TextCell(row.ClientName),
                     TextCell(row.ProjectName),
+                    TextCell(PublicReference.Project(row.ProjectNumber)),
                     TextCell(row.UserName),
                     NumberCell((double)row.Hours, 3),
                     TextCell(row.Description),
                     TextCell(row.Status.ToString()))
                 { RowIndex = index++ });
             }
-            worksheetPart.Worksheet.Append(new AutoFilter { Reference = $"A4:G{Math.Max(4, index - 1)}" });
+            worksheetPart.Worksheet.Append(new AutoFilter { Reference = $"A4:I{Math.Max(4, index - 1)}" });
             var sheets = workbookPart.Workbook.AppendChild(new Sheets());
             sheets.Append(new Sheet { Id = workbookPart.GetIdOfPart(worksheetPart), SheetId = 1, Name = "Time report" });
             workbookPart.Workbook.Save();

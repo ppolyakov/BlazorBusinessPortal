@@ -40,7 +40,11 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=business_portal;Username=business_portal;Password=${POSTGRES_PASSWORD}
-      SeedDemoData: "false"
+      SeedDemoData: "true"
+      DemoPassword: ${DEMO_PASSWORD:?Copy .env.example to .env and set DEMO_PASSWORD}
+      DemoAccess__Enabled: "true"
+      DemoReset__Enabled: "true"
+      DemoReset__HourUtc: ${DEMO_RESET_HOUR_UTC:-3}
       DataProtectionKeysPath: /app/keys
     volumes:
       - business_portal_keys:/app/keys

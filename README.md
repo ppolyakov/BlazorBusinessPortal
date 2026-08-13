@@ -18,7 +18,7 @@ See [the exact screenshot routes and states](docs/screenshots/README.md).
 
 ## Live demo
 
-No public deployment is currently configured. Run the complete demo locally with Docker Compose.
+The application is prepared for a public Railway deployment. It can also be run locally with Docker Compose.
 
 ## Demo accounts
 
@@ -28,9 +28,11 @@ When `SeedDemoData=true`, the following Northstar Studio accounts are created:
 |---|---|
 | Administrator | `admin@northstar.demo` |
 | Manager | `manager@northstar.demo` |
+| Manager | `manager2@northstar.demo` |
 | Employee | `employee@northstar.demo` |
+| Employee | `employee2@northstar.demo` |
 
-A second organization contains `manager@bluebird.demo` for isolation verification. Every account uses the password supplied through `DemoPassword`; no real password is committed.
+When `DemoAccess__Enabled=true`, the sign-in page offers one-click Administrator, Manager, and Employee profiles. The browser never receives the demo password: the server signs in only one of these allow-listed seed accounts using `DemoPassword`. Manual sign-in remains available for the other seeded accounts. The baseline includes four clients, six projects, 24 work items, 48 time entries, notifications, and recent audit history. Dates are generated relative to the reset date so dashboard and reporting views remain useful.
 
 ## Features
 
@@ -90,7 +92,35 @@ docker compose build
 docker compose up
 ```
 
-Open `http://localhost:8080`. The one-shot `migrate` service applies migrations and idempotent demo seeding before the web service starts. PostgreSQL data and ASP.NET Core Data Protection keys use separate named volumes, so data and authentication cookies survive web-container replacement. Stop only this project with `docker compose down`; keep the volumes unless you intentionally want to reset demo data.
+Open `http://localhost:8080`. The one-shot `migrate` service applies migrations and idempotent demo seeding before the web service starts. The web service restores the pristine demo baseline every day at `DEMO_RESET_HOUR_UTC` (03:00 UTC by default). PostgreSQL data and ASP.NET Core Data Protection keys use separate named volumes, so data and authentication cookies survive web-container replacement.
+
+Reset the demo immediately without deleting the PostgreSQL volume:
+
+```bash
+docker compose run --rm migrate --migrate --reset-demo
+docker compose restart web
+```
+
+The reset truncates only Vela application and Identity tables, preserves `__EFMigrationsHistory`, and recreates the complete demo team and history in one transaction.
+
+## Railway deployment
+
+Railway deploys this repository through the root `Dockerfile`; `railway.json` supplies the build, healthcheck, and restart policy, while `compose.yaml` remains the local-development setup. Create a Railway project, add a managed PostgreSQL service, and deploy the GitHub repository as the application service. In the application service's Raw Editor, configure:
+
+```text
+ASPNETCORE_URLS=http://+:${PORT}
+ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+ConnectionStrings__DefaultConnection=Host=${{Postgres.PGHOST}};Port=${{Postgres.PGPORT}};Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};Password=${{Postgres.PGPASSWORD}}
+DatabaseInitialization__MigrateOnStartup=true
+SeedDemoData=true
+DemoPassword=<a-strong-server-only-password>
+DemoAccess__Enabled=true
+DemoReset__Enabled=true
+DemoReset__HourUtc=3
+DataProtectionKeysPath=/app/keys
+```
+
+If the database service has a different Railway service name, replace `Postgres` in the reference variables. Attach one Railway Volume to the application at `/app/keys`, keep one always-on application replica (do not enable Serverless sleeping), and generate a public domain. On the first start Vela applies migrations and creates the baseline; later starts are idempotent. The background reset runs daily at the configured UTC hour and may sign out visitors whose session spans the reset.
 
 ## Local development
 
@@ -100,13 +130,15 @@ Prerequisites: .NET SDK 10.0.301 or newer compatible 10.0 SDK, PostgreSQL, and D
 $env:ConnectionStrings__DefaultConnection = "Host=localhost;Port=5432;Database=business_portal;Username=business_portal;Password=<local-password>"
 $env:SeedDemoData = "true"
 $env:DemoPassword = "<strong-local-demo-password>"
+$env:DemoAccess__Enabled = "true"
+$env:DemoReset__Enabled = "false"
 dotnet tool restore
 dotnet restore BusinessPortal.sln
 dotnet run --project src/BusinessPortal.Web/BusinessPortal.Web.csproj -- --migrate --seed
 dotnet run --project src/BusinessPortal.Web/BusinessPortal.Web.csproj
 ```
 
-The first `dotnet run` is an explicit migration/seed operation and exits. The web process never applies production migrations implicitly.
+The first `dotnet run` is an explicit migration/seed operation and exits. Startup migration remains disabled by default and is enabled only when `DatabaseInitialization__MigrateOnStartup=true`, as in the Railway demo configuration.
 
 ## Migrations
 
@@ -122,7 +154,7 @@ Apply it explicitly:
 dotnet run --project src/BusinessPortal.Web -- --migrate
 ```
 
-For deployment, back up the database, run the migration job once with the target connection string, verify it, then start the new web image.
+For a production deployment, back up the database, run the migration job once with the target connection string, verify it, then start the new web image. `DatabaseInitialization__MigrateOnStartup` and the destructive nightly reset are demo-hosting conveniences and should remain disabled for real customer data.
 
 ## Verification
 
@@ -155,8 +187,9 @@ Read [SECURITY.md](SECURITY.md) for reporting guidance and `docs/risks.md` for k
 ## Demo limitations
 
 - No public signup, invitation administration, password email delivery, billing, attachments, or external identity provider
-- Demo seeding is intentionally opt-in and requires environment-supplied credentials
-- No public hosting is included
+- Demo seeding and public one-click access are separate, opt-in settings and require server-side environment credentials
+- Public demo access is suitable only for isolated fictional data with no production integrations or sensitive information
+- The optional nightly reset is destructive by design and must never be enabled against a production database
 - Performance results must be measured in the target environment; no production-scale claims are made
 - Screenshots and the final portfolio video require a running seeded instance
 
