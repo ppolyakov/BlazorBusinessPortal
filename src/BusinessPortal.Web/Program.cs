@@ -96,6 +96,12 @@ app.Use(async (context, next) =>
 });
 app.UseAntiforgery();
 app.MapStaticAssets();
+app.MapMethods(
+        "/",
+        [HttpMethods.Head],
+        () => Results.Ok())
+    .AllowAnonymous();
+
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 app.MapAdditionalIdentityEndpoints();
 app.MapAvatarEndpoints();

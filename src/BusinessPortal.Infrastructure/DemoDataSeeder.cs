@@ -425,7 +425,7 @@ public sealed class DemoDataSeeder(
     private static readonly string[] WorkTitles =
     [
         "Confirm discovery scope", "Model operational data", "Build client workspace", "Add project filters",
-        "Implement time entry form", "Review access policies", "Create approval queue", "Test tenant isolation",
+        "Implement time entry form", "Review access policies", "Create approval queue", "Verify tenant isolation",
         "Tune reporting query", "Design KPI cards", "Validate responsive layout", "Prepare Excel export",
         "Add audit timeline", "Review keyboard navigation", "Configure health checks", "Write migration guide",
         "Exercise manager workflow", "Exercise employee workflow", "Review error states", "Prepare portfolio captures",
@@ -446,7 +446,7 @@ public sealed class DemoDataSeeder(
         "Prepared the client review and incorporated feedback.",
         "Validated reporting data and documented the findings.",
         "Refined the delivery plan and resolved open dependencies.",
-        "Tested the latest release candidate across key user journeys.",
+        "Validated the latest release candidate across key user journeys.",
         "Updated project documentation and acceptance criteria."
     ];
 }

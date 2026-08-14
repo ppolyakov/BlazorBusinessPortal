@@ -62,6 +62,7 @@ public sealed class DemoDataTests(PostgreSqlFixture fixture)
         Assert.True(await verification.AuditEntries.CountAsync() >= 10);
         Assert.True(await verification.Notifications.CountAsync() >= 8);
         Assert.False(await verification.Clients.AnyAsync(x => x.Name == "Visitor edit"));
+        Assert.False(await verification.WorkItems.AnyAsync(x => EF.Functions.ILike(x.Title, "%test%")));
     }
 
     [Theory]
