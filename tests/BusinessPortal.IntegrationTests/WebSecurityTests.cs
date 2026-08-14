@@ -42,6 +42,14 @@ public sealed class WebSecurityTests(PostgreSqlFixture fixture)
         Assert.Equal(expected, BusinessPortal.Web.Services.DemoAccountProtection.IsBlockedRequest(context.Request));
     }
 
+    [Theory]
+    [InlineData("manager", "manager@northstar.demo")]
+    [InlineData("employee", "employee@northstar.demo")]
+    [InlineData("administrator", null)]
+    [InlineData("unknown", null)]
+    public void Public_demo_exposes_only_manager_and_employee_profiles(string profile, string? expectedEmail) =>
+        Assert.Equal(expectedEmail, BusinessPortal.Web.Services.DemoLoginProfiles.ResolveEmail(profile));
+
     [Fact]
     public async Task Public_demo_rejects_direct_account_mutation_requests()
     {

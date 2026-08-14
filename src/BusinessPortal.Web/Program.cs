@@ -116,13 +116,7 @@ app.MapPost("/account/demo-login", async (
     {
         await antiforgery.ValidateRequestAsync(context);
         var form = await context.Request.ReadFormAsync(cancellationToken);
-        var email = form["profile"].ToString() switch
-        {
-            "administrator" => "admin@northstar.demo",
-            "manager" => "manager@northstar.demo",
-            "employee" => "employee@northstar.demo",
-            _ => null
-        };
+        var email = DemoLoginProfiles.ResolveEmail(form["profile"].ToString());
         var password = configuration["DemoPassword"];
 
         if (email is null || string.IsNullOrWhiteSpace(password))

@@ -988,7 +988,6 @@ textarea.form-control { min-height: 96px; resize: vertical; }
 .demo-role-button strong { color: var(--ink); font-size: .75rem; font-weight: 720; }
 .demo-role-button small { margin-top: .15rem; overflow: hidden; color: var(--muted); font-size: .63rem; text-overflow: ellipsis; white-space: nowrap; }
 .demo-role-mark { width: 38px; height: 38px; display: inline-grid; place-items: center; border-radius: 10px; font-size: .7rem; font-weight: 780; }
-.demo-role-mark.admin { color: #212517; background: #f0bd66; }
 .demo-role-mark.manager { color: #113b32; background: #86d3bf; }
 .demo-role-mark.employee { color: #233758; background: #a9c8ee; }
 .demo-role-arrow { color: var(--brand); font-size: 1.05rem; transition: transform .16s ease; }

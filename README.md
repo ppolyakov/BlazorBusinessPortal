@@ -22,17 +22,16 @@ The application is prepared for a public Railway deployment. It can also be run 
 
 ## Demo accounts
 
-When `SeedDemoData=true`, the following Northstar Studio accounts are created:
+The public Northstar Studio demo exposes these team accounts:
 
 | Role | Email |
 |---|---|
-| Administrator | `admin@northstar.demo` |
 | Manager | `manager@northstar.demo` |
 | Manager | `manager2@northstar.demo` |
 | Employee | `employee@northstar.demo` |
 | Employee | `employee2@northstar.demo` |
 
-When `DemoAccess__Enabled=true`, the sign-in page offers one-click Administrator, Manager, and Employee profiles. The browser never receives the demo password: the server signs in only one of these allow-listed seed accounts using `DemoPassword`. Manual sign-in remains available for the other seeded accounts. The baseline includes four clients, six projects, 24 work items, 48 time entries, notifications, and recent audit history. Dates are generated relative to the reset date so dashboard and reporting views remain useful.
+When `DemoAccess__Enabled=true`, the sign-in page offers one-click Manager and Employee profiles. The browser never receives the demo password: the server signs in only one of these allow-listed seed accounts using `DemoPassword`. Manual sign-in remains available for the other seeded team accounts. The baseline includes four clients, six projects, 24 work items, 48 time entries, notifications, and recent audit history. Dates are generated relative to the reset date so dashboard and reporting views remain useful.
 
 ## Features
 
