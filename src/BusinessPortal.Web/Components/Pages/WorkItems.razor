@@ -70,7 +70,7 @@
     {
         @if (canManage && selectedIds.Count > 0) { <div class="selection-toolbar"><strong>@selectedIds.Count selected</strong><button type="button" class="btn btn-danger-soft btn-sm" @onclick="() => BeginDelete(selectedIds)">Delete selected</button><button type="button" class="btn btn-quiet btn-sm" @onclick="ClearSelection">Clear</button></div> }
         <div class="table-shell">
-            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
+            <PortalQuickGrid TGridItem="WorkItemListItem" Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
                 @if (canManage) { <TemplateColumn Class="cell-select"><HeaderTemplate><input type="checkbox" aria-label="Select all editable work items on this page" checked="@AllPageSelected" @onchange="ToggleAll" /></HeaderTemplate><ChildContent><input type="checkbox" aria-label="Select @context.Reference" checked="@selectedIds.Contains(context.Id)" disabled="@(context.Status == WorkItemStatus.Done)" @onchange="args => ToggleSelection(context.Id, args)" @onclick:stopPropagation="true" /></ChildContent></TemplateColumn> }
                 <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference"><div class="row-open-target" @onclick="() => Open(context)">@context.Reference</div></TemplateColumn>
                 <TemplateColumn Title="Work item" SortBy="@sortByTitle"><div class="row-open-target row-open-stack" @onclick="() => Open(context)"><strong>@context.Title</strong><div class="muted">@context.ProjectReference · @context.ProjectName</div></div></TemplateColumn>
@@ -79,7 +79,7 @@
                 <TemplateColumn Title="Assignee" SortBy="@sortByAssignee"><div class="row-open-target" @onclick="() => Open(context)">@if (context.AssignedToName is null) { <span class="muted">Unassigned</span> } else { <PersonCell Name="@context.AssignedToName" ImageUrl="@context.AssignedToAvatarUrl" ColorKey="@context.AssignedToUserId" Emphasized="false" /> }</div></TemplateColumn>
                 <TemplateColumn Title="Due" SortBy="@sortByDue" Class="cell-date"><div class="row-open-target" @onclick="() => Open(context)">@if (context.DueDate is null) { <span class="muted">—</span> } else if (IsOverdue(context)) { <span class="status-pill overdue" title="The due date has passed and this work item is not done"><span>Overdue</span><span aria-hidden="true">·</span><span>@context.DueDate.Value.ToString("yyyy-MM-dd")</span></span> } else { <span>@context.DueDate.Value.ToString("yyyy-MM-dd")</span> }</div></TemplateColumn>
                 <TemplateColumn Title="Estimate" SortBy="@sortByEstimate" Class="cell-number"><div class="row-open-target" @onclick="() => Open(context)">@context.EstimatedHours.ToString("0.#")</div></TemplateColumn>
-            </QuickGrid>
+            </PortalQuickGrid>
         </div>
         <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
     }

@@ -50,7 +50,7 @@
     {
         @if (selectedIds.Count > 0) { <div class="selection-toolbar"><strong>@selectedIds.Count draft@(selectedIds.Count == 1 ? "" : "s") selected</strong><button type="button" class="btn btn-danger-soft btn-sm" @onclick="() => BeginDelete(selectedIds)">Delete selected</button><button type="button" class="btn btn-quiet btn-sm" @onclick="ClearSelection">Clear</button></div> }
         <div class="table-shell">
-            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
+            <PortalQuickGrid TGridItem="TimeEntryListItem" Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
                 <TemplateColumn Class="cell-select"><HeaderTemplate><input type="checkbox" aria-label="Select all deletable drafts on this page" checked="@AllDraftsSelected" disabled="@(DraftsOnPage.Count == 0)" @onchange="ToggleAllDrafts" /></HeaderTemplate><ChildContent><input type="checkbox" aria-label="Select @context.Reference" checked="@selectedIds.Contains(context.Id)" disabled="@(context.Status != TimeEntryStatus.Draft)" @onchange="args => ToggleSelection(context.Id, args)" @onclick:stopPropagation="true" /></ChildContent></TemplateColumn>
                 <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference"><div class="row-open-target" @onclick="() => Open(context)">@context.Reference</div></TemplateColumn>
                 <TemplateColumn Title="Date" SortBy="@sortByDate" Class="cell-date"><div class="row-open-target" @onclick="() => Open(context)">@context.WorkDate.ToString("yyyy-MM-dd")</div></TemplateColumn>
@@ -58,7 +58,7 @@
                 <TemplateColumn Title="Description" SortBy="@sortByDescription"><div class="row-open-target" @onclick="() => Open(context)">@context.Description</div></TemplateColumn>
                 <TemplateColumn Title="Hours" SortBy="@sortByHours" Class="cell-number"><div class="row-open-target" @onclick="() => Open(context)">@context.Hours.ToString("0.##")</div></TemplateColumn>
                 <TemplateColumn Title="Status" SortBy="@sortByStatus" Class="cell-status"><div class="row-open-target" @onclick="() => Open(context)"><StatusPill Value="@context.Status" /></div></TemplateColumn>
-            </QuickGrid>
+            </PortalQuickGrid>
         </div>
         <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
     }

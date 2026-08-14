@@ -27,14 +27,14 @@
     else
     {
         <div class="table-shell">
-            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid">
+            <PortalQuickGrid TGridItem="AuditListItem" Items="@result.Items.AsQueryable()" Class="quick-grid">
                 <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference">@context.EntityId</TemplateColumn>
                 <PropertyColumn Property="x => x.OccurredAtUtc" Title="UTC time" Format="yyyy-MM-dd HH:mm" Sortable="true" Class="cell-date" />
                 <TemplateColumn Title="Actor" SortBy="@sortByActor"><PersonCell Name="@context.UserName" ImageUrl="@context.UserAvatarUrl" ColorKey="@context.UserId" /></TemplateColumn>
                 <TemplateColumn Title="Action" SortBy="@sortByAction"><AuditBadge Value="@context.Action" /></TemplateColumn>
                 <TemplateColumn Title="Entity" SortBy="@sortByEntity"><AuditBadge Value="@context.EntityType" Entity="true" /></TemplateColumn>
                 <PropertyColumn Property="x => x.Summary" Title="Safe summary" Sortable="true" />
-            </QuickGrid>
+            </PortalQuickGrid>
         </div>
         <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
     }

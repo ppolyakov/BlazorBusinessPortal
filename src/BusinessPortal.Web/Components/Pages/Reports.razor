@@ -57,7 +57,7 @@ else
         else
         {
             <div class="table-shell">
-                <QuickGrid Items="@result.Details.Items.AsQueryable()" Class="quick-grid">
+                <PortalQuickGrid TGridItem="ReportRow" Items="@result.Details.Items.AsQueryable()" Class="quick-grid">
                     <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference">@context.Reference</TemplateColumn>
                     <PropertyColumn Property="x => x.WorkDate" Title="Date" Format="yyyy-MM-dd" Sortable="true" Class="cell-date" />
                     <PropertyColumn Property="x => x.ClientName" Title="Client" Sortable="true" />
@@ -66,7 +66,7 @@ else
                     <PropertyColumn Property="x => x.Hours" Title="Hours" Format="0.##" Sortable="true" Class="cell-number" />
                     <PropertyColumn Property="x => x.Description" Title="Description" Sortable="true" />
                     <TemplateColumn Title="Status" SortBy="@sortByStatus" Class="cell-status"><StatusPill Value="@context.Status" /></TemplateColumn>
-                </QuickGrid>
+                </PortalQuickGrid>
             </div>
             <Pager Page="@result.Details.Page" TotalPages="@result.Details.TotalPages" TotalCount="@result.Details.TotalCount" PageSize="@filter.PageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
         }

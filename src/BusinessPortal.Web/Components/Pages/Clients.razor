@@ -65,7 +65,7 @@
             </div>
         }
         <div class="table-shell">
-            <QuickGrid Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
+            <PortalQuickGrid TGridItem="ClientListItem" Items="@result.Items.AsQueryable()" Class="quick-grid interactive-grid">
                 @if (canManage)
                 {
                     <TemplateColumn Class="cell-select">
@@ -80,7 +80,7 @@
                 <TemplateColumn Title="Phone" SortBy="@sortByPhone"><div class="row-open-target" @onclick="() => Open(context)">@(context.ContactPhone ?? "—")</div></TemplateColumn>
                 <TemplateColumn Title="Status" SortBy="@sortByStatus" Class="cell-status"><div class="row-open-target" @onclick="() => Open(context)"><StatusPill Value="@context.Status" /></div></TemplateColumn>
                 <TemplateColumn Title="Projects" SortBy="@sortByProjects" Class="cell-number"><div class="row-open-target" @onclick="() => Open(context)">@context.ProjectCount</div></TemplateColumn>
-            </QuickGrid>
+            </PortalQuickGrid>
         </div>
         <Pager Page="@result.Page" TotalPages="@result.TotalPages" TotalCount="@result.TotalCount" PageSize="@pageSize" Changed="ChangePage" PageSizeChanged="ChangePageSize" />
     }

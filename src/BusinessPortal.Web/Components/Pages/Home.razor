@@ -95,7 +95,7 @@ else
             else
             {
                 <div class="table-shell">
-                    <QuickGrid Items="@model.UpcomingWork.AsQueryable()" Class="quick-grid">
+                    <PortalQuickGrid TGridItem="WorkItemListItem" Items="@model.UpcomingWork.AsQueryable()" Class="quick-grid">
                         <TemplateColumn Title="Number" SortBy="@sortByNumber" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" Class="cell-reference">@context.Reference</TemplateColumn>
                         <PropertyColumn Property="x => x.Title" Title="Work item" Sortable="true" />
                         <TemplateColumn Title="Project" SortBy="@sortByProject"><strong>@context.ProjectReference</strong><div class="muted">@context.ProjectName</div></TemplateColumn>
@@ -105,7 +105,7 @@ else
                         </TemplateColumn>
                         <TemplateColumn Title="Priority" SortBy="@sortByPriority" Class="cell-status"><StatusPill Value="@context.Priority" /></TemplateColumn>
                         <PropertyColumn Property="x => x.DueDate" Title="Due" Format="yyyy-MM-dd" Sortable="true" Class="cell-date" />
-                    </QuickGrid>
+                    </PortalQuickGrid>
                 </div>
             }
         </section>
